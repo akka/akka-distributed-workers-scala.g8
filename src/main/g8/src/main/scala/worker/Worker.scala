@@ -25,12 +25,8 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
 
   import context.dispatcher
 
-  // TODO extract proxy details to a single place (now repeated)
   val masterProxy = context.actorOf(
-    ClusterSingletonProxy.props(
-      settings = ClusterSingletonProxySettings(context.system).withRole("backend"),
-      singletonManagerPath = "/user/master"
-    ),
+    MasterSingleton.proxyProps(context.system),
     name = "masterProxy")
 
   val registerTask = context.system.scheduler.schedule(0.seconds, registerInterval, masterProxy, RegisterWorker(workerId))
@@ -43,6 +39,53 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
     case None         => throw new IllegalStateException("Not working")
   }
 
+  def receive = idle
+
+  def idle = ({
+    case WorkIsReady =>
+      masterProxy ! WorkerRequestsWork(workerId)
+
+    case Work(workId, job) =>
+      log.info("Got work: {}", job)
+      currentWorkId = Some(workId)
+      workExecutor ! job
+      context.become(working)
+
+  }: Receive) orElse stopIfWorkerDies
+
+  def working = ({
+    case WorkComplete(result) =>
+      log.info("Work is complete. Result {}.", result)
+      masterProxy ! WorkIsDone(workerId, workId, result)
+      context.setReceiveTimeout(5.seconds)
+      context.become(waitForWorkIsDoneAck(result))
+
+    case _: Work =>
+      log.info("Yikes. Master told me to do work, while I'm working.")
+
+    case WorkIsReady                => // ignored
+
+  }: Receive) orElse stopIfWorkerDies
+
+  def waitForWorkIsDoneAck(result: Any) = ({
+    case Ack(id) if id == workId =>
+      masterProxy ! WorkerRequestsWork(workerId)
+      context.setReceiveTimeout(Duration.Undefined)
+      context.become(idle)
+
+    case ReceiveTimeout =>
+      log.info("No ack from master, retrying")
+      masterProxy ! WorkIsDone(workerId, workId, result)
+
+    case WorkIsReady                => // ignored
+
+  }: Receive) orElse stopIfWorkerDies
+
+  val stopIfWorkerDies: Receive = {
+    case Terminated(`workExecutor`) => context.stop(self)
+  }
+
+
   override def supervisorStrategy = OneForOneStrategy() {
     case _: ActorInitializationException => Stop
     case _: DeathPactException           => Stop
@@ -53,46 +96,5 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
   }
 
   override def postStop(): Unit = registerTask.cancel()
-
-  def receive = idle
-
-  def idle: Receive = {
-    case WorkIsReady =>
-      masterProxy ! WorkerRequestsWork(workerId)
-
-    case Work(workId, job) =>
-      log.info("Got work: {}", job)
-      currentWorkId = Some(workId)
-      workExecutor ! job
-      context.become(working)
-  }
-
-  def working: Receive = {
-    case WorkComplete(result) =>
-      log.info("Work is complete. Result {}.", result)
-      masterProxy ! WorkIsDone(workerId, workId, result)
-      context.setReceiveTimeout(5.seconds)
-      context.become(waitForWorkIsDoneAck(result))
-
-    case _: Work =>
-      log.info("Yikes. Master told me to do work, while I'm working.")
-  }
-
-  def waitForWorkIsDoneAck(result: Any): Receive = {
-    case Ack(id) if id == workId =>
-      masterProxy ! WorkerRequestsWork(workerId)
-      context.setReceiveTimeout(Duration.Undefined)
-      context.become(idle)
-    case ReceiveTimeout =>
-      log.info("No ack from master, retrying")
-      masterProxy ! WorkIsDone(workerId, workId, result)
-  }
-
-  override def unhandled(message: Any): Unit = message match {
-    case Terminated(`workExecutor`) => context.stop(self)
-    case WorkIsReady                =>
-    case _                          => super.unhandled(message)
-  }
-
 
 }
