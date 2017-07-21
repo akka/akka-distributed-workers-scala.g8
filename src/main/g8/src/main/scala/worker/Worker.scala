@@ -1,38 +1,39 @@
 package worker
 
 import java.util.UUID
+
+import akka.actor.SupervisorStrategy.{Restart, Stop}
+import akka.actor._
+import akka.cluster.singleton.{ClusterSingletonProxy, ClusterSingletonProxySettings}
+
 import scala.concurrent.duration._
-import akka.actor.Actor
-import akka.actor.ActorLogging
-import akka.actor.ActorRef
-import akka.actor.Props
-import akka.actor.ReceiveTimeout
-import akka.actor.Terminated
-import akka.cluster.client.ClusterClient.SendToAll
-import akka.actor.OneForOneStrategy
-import akka.actor.SupervisorStrategy.Stop
-import akka.actor.SupervisorStrategy.Restart
-import akka.actor.ActorInitializationException
-import akka.actor.DeathPactException
 
 object Worker {
 
-  def props(clusterClient: ActorRef, workExecutorProps: Props, registerInterval: FiniteDuration = 10.seconds): Props =
-    Props(classOf[Worker], clusterClient, workExecutorProps, registerInterval)
+  def props(workExecutorProps: Props, registerInterval: FiniteDuration = 10.seconds): Props =
+    Props(new Worker(workExecutorProps, registerInterval))
 
   case class WorkComplete(result: Any)
 }
 
-class Worker(clusterClient: ActorRef, workExecutorProps: Props, registerInterval: FiniteDuration)
+class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
   extends Actor with ActorLogging {
-  import Worker._
   import MasterWorkerProtocol._
+  import Worker._
 
   val workerId = UUID.randomUUID().toString
 
   import context.dispatcher
-  val registerTask = context.system.scheduler.schedule(0.seconds, registerInterval, clusterClient,
-    SendToAll("/user/master/singleton", RegisterWorker(workerId)))
+
+  // TODO extract proxy details to a single place (now repeated)
+  val masterProxy = context.actorOf(
+    ClusterSingletonProxy.props(
+      settings = ClusterSingletonProxySettings(context.system).withRole("backend"),
+      singletonManagerPath = "/user/master"
+    ),
+    name = "masterProxy")
+
+  val registerTask = context.system.scheduler.schedule(0.seconds, registerInterval, masterProxy, RegisterWorker(workerId))
 
   val workExecutor = context.watch(context.actorOf(workExecutorProps, "exec"))
 
@@ -46,7 +47,7 @@ class Worker(clusterClient: ActorRef, workExecutorProps: Props, registerInterval
     case _: ActorInitializationException => Stop
     case _: DeathPactException           => Stop
     case _: Exception =>
-      currentWorkId foreach { workId => sendToMaster(WorkFailed(workerId, workId)) }
+      currentWorkId foreach { workId => masterProxy ! WorkFailed(workerId, workId) }
       context.become(idle)
       Restart
   }
@@ -57,7 +58,7 @@ class Worker(clusterClient: ActorRef, workExecutorProps: Props, registerInterval
 
   def idle: Receive = {
     case WorkIsReady =>
-      sendToMaster(WorkerRequestsWork(workerId))
+      masterProxy ! WorkerRequestsWork(workerId)
 
     case Work(workId, job) =>
       log.info("Got work: {}", job)
@@ -69,7 +70,7 @@ class Worker(clusterClient: ActorRef, workExecutorProps: Props, registerInterval
   def working: Receive = {
     case WorkComplete(result) =>
       log.info("Work is complete. Result {}.", result)
-      sendToMaster(WorkIsDone(workerId, workId, result))
+      masterProxy ! WorkIsDone(workerId, workId, result)
       context.setReceiveTimeout(5.seconds)
       context.become(waitForWorkIsDoneAck(result))
 
@@ -79,12 +80,12 @@ class Worker(clusterClient: ActorRef, workExecutorProps: Props, registerInterval
 
   def waitForWorkIsDoneAck(result: Any): Receive = {
     case Ack(id) if id == workId =>
-      sendToMaster(WorkerRequestsWork(workerId))
+      masterProxy ! WorkerRequestsWork(workerId)
       context.setReceiveTimeout(Duration.Undefined)
       context.become(idle)
     case ReceiveTimeout =>
       log.info("No ack from master, retrying")
-      sendToMaster(WorkIsDone(workerId, workId, result))
+      masterProxy ! WorkIsDone(workerId, workId, result)
   }
 
   override def unhandled(message: Any): Unit = message match {
@@ -93,8 +94,5 @@ class Worker(clusterClient: ActorRef, workExecutorProps: Props, registerInterval
     case _                          => super.unhandled(message)
   }
 
-  def sendToMaster(msg: Any): Unit = {
-    clusterClient ! SendToAll("/user/master/singleton", msg)
-  }
 
 }

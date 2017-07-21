@@ -74,18 +74,9 @@ object Main {
     // load worker.conf
     val conf = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + port).
       withFallback(ConfigFactory.load("worker"))
-    val system = ActorSystem("WorkerSystem", conf)
-    val initialContacts = immutableSeq(conf.getStringList("contact-points")).map {
-      case AddressFromURIString(addr) ⇒ RootActorPath(addr) / "system" / "receptionist"
-    }.toSet
+    val system = ActorSystem("ClusterSystem", conf)
 
-    val clusterClient = system.actorOf(
-      ClusterClient.props(
-        ClusterClientSettings(system)
-          .withInitialContacts(initialContacts)),
-      "clusterClient")
-
-    system.actorOf(Worker.props(clusterClient, Props[WorkExecutor]), "worker")
+    system.actorOf(Worker.props(Props[WorkExecutor]), "worker")
   }
 
   def startupSharedJournal(system: ActorSystem, startStore: Boolean, path: ActorPath): Unit = {

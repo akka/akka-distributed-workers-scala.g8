@@ -7,7 +7,6 @@ import akka.cluster.pubsub.DistributedPubSubMediator
 import scala.concurrent.duration.Deadline
 import scala.concurrent.duration.FiniteDuration
 import akka.actor.Props
-import akka.cluster.client.ClusterClientReceptionist
 import akka.cluster.Cluster
 import akka.persistence.PersistentActor
 
@@ -16,7 +15,7 @@ object Master {
   val ResultsTopic = "results"
 
   def props(workTimeout: FiniteDuration): Props =
-    Props(classOf[Master], workTimeout)
+    Props(new Master(workTimeout))
 
   case class Ack(workId: String)
 
@@ -34,7 +33,6 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
   import WorkState._
 
   val mediator = DistributedPubSub(context.system).mediator
-  ClusterClientReceptionist(context.system).registerService(self)
 
   // persistenceId must include cluster role to support multiple masters
   override def persistenceId: String = Cluster(context.system).selfRoles.find(_.startsWith("backend-")) match {
