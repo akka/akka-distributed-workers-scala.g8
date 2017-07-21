@@ -16,10 +16,10 @@ object Main {
       // with no args, we run a few
       // different nodes in the same JVM
       startBackend(2551)
-      Thread.sleep(5000)
       startBackend(2552)
+      Thread.sleep(2000)
       startWorker(0)
-      Thread.sleep(5000)
+      Thread.sleep(2000)
       startFrontend(0)
     } else {
       // if there is an int arg we use it

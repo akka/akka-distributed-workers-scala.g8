@@ -41,7 +41,7 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
 
   def receive = idle
 
-  def idle = ({
+  def idle: Receive = ({
     case WorkIsReady =>
       masterProxy ! WorkerRequestsWork(workerId)
 
@@ -51,9 +51,9 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
       workExecutor ! job
       context.become(working)
 
-  }: Receive) orElse stopIfWorkerDies
+  }: Receive).orElse(stopIfWorkerDies)
 
-  def working = ({
+  def working: Receive = ({
     case WorkComplete(result) =>
       log.info("Work is complete. Result {}.", result)
       masterProxy ! WorkIsDone(workerId, workId, result)
@@ -63,11 +63,9 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
     case _: Work =>
       log.info("Yikes. Master told me to do work, while I'm working.")
 
-    case WorkIsReady                => // ignored
+  }: Receive).orElse(stopIfWorkerDies)
 
-  }: Receive) orElse stopIfWorkerDies
-
-  def waitForWorkIsDoneAck(result: Any) = ({
+  def waitForWorkIsDoneAck(result: Any): Receive = ({
     case Ack(id) if id == workId =>
       masterProxy ! WorkerRequestsWork(workerId)
       context.setReceiveTimeout(Duration.Undefined)
@@ -77,12 +75,11 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
       log.info("No ack from master, retrying")
       masterProxy ! WorkIsDone(workerId, workId, result)
 
-    case WorkIsReady                => // ignored
-
-  }: Receive) orElse stopIfWorkerDies
+  }: Receive).orElse(stopIfWorkerDies)
 
   val stopIfWorkerDies: Receive = {
     case Terminated(`workExecutor`) => context.stop(self)
+    case WorkIsReady                => // ignored if not caught already
   }
 
 
@@ -91,6 +88,7 @@ class Worker(workExecutorProps: Props, registerInterval: FiniteDuration)
     case _: DeathPactException           => Stop
     case _: Exception =>
       currentWorkId foreach { workId => masterProxy ! WorkFailed(workerId, workId) }
+      currentWorkId = None
       context.become(idle)
       Restart
   }

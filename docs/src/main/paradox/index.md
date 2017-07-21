@@ -39,55 +39,55 @@ To run the sample application, which starts a small cluster inside of the same J
  
     sbt builds the project and runs the `Main` of the project:
 
-The output should look _something_ like this (scroll all the way to the right to see the Actor output):
+After waiting a few seconds for the cluster to form the output should start look _something_ like this (scroll all the way to the right to see the Actor output):
  
 ```
-[info] Compiling 1 Scala source and 1 Java source to /Users/x/akka-quickstart-scala/target/scala-2.12/classes...
-[info] Running com.lightbend.akka.sample.AkkaQuickstart
->>> Press ENTER to exit <<<
-[INFO] [05/09/2017 09:57:15.979] [helloAkka-akka.actor.default-dispatcher-2] [akka://helloAkka/user/printerActor] Greeting received (from Actor[akka://helloAkka/user/howdyGreeter#-1854995773]): Howdy, Akka
-[INFO] [05/09/2017 09:57:15.980] [helloAkka-akka.actor.default-dispatcher-2] [akka://helloAkka/user/printerActor] Greeting received (from Actor[akka://helloAkka/user/helloGreeter#-1072877049]): Hello, Scala
-[INFO] [05/09/2017 09:57:15.980] [helloAkka-akka.actor.default-dispatcher-2] [akka://helloAkka/user/printerActor] Greeting received (from Actor[akka://helloAkka/user/goodDayGreeter#1972065097]): Good day, Play
-[INFO] [05/09/2017 09:57:15.980] [helloAkka-akka.actor.default-dispatcher-2] [akka://helloAkka/user/printerActor] Greeting received (from Actor[akka://helloAkka/user/howdyGreeter#-1854995773]): Howdy, Lightbend
-[success] Total time: 5 s, completed May 9, 2017 9:52:34 AM
+[INFO] [07/21/2017 17:41:53.320] [ClusterSystem-akka.actor.default-dispatcher-16] [akka.tcp://ClusterSystem@127.0.0.1:51983/user/producer] Produced work: 3
+[INFO] [07/21/2017 17:41:53.322] [ClusterSystem-akka.actor.default-dispatcher-3] [akka.tcp://ClusterSystem@127.0.0.1:2551/user/master/singleton] Accepted work: 3bce4d6d-eaae-4da6-b316-0c6f566f2399
+[INFO] [07/21/2017 17:41:53.328] [ClusterSystem-akka.actor.default-dispatcher-3] [akka.tcp://ClusterSystem@127.0.0.1:2551/user/master/singleton] Giving worker 2b646020-6273-437c-aa0d-4aad6f12fb47 some work 3bce4d6d-eaae-4da6-b316-0c6f566f2399
+[INFO] [07/21/2017 17:41:53.328] [ClusterSystem-akka.actor.default-dispatcher-2] [akka.tcp://ClusterSystem@127.0.0.1:51980/user/worker] Got work: 3
+[INFO] [07/21/2017 17:41:53.328] [ClusterSystem-akka.actor.default-dispatcher-16] [akka.tcp://ClusterSystem@127.0.0.1:51980/user/worker] Work is complete. Result 3 * 3 = 9.
+[INFO] [07/21/2017 17:41:53.329] [ClusterSystem-akka.actor.default-dispatcher-19] [akka.tcp://ClusterSystem@127.0.0.1:2551/user/master/singleton] Work 3bce4d6d-eaae-4da6-b316-0c6f566f2399 is done by worker 2b646020-6273-437c-aa0d-4aad6f12fb47
 ```
    
-Congratulations, you just ran your first Akka app. Now take a look at what happened under the covers. 
+Congratulations, you just ran your first Akka Cluster app. Now take a look at what happened under the covers. 
 
-## What Hello World does
+## What happens when you run it
 
-As you saw in the console output, the example outputs several greetings. Let’s take a look what happens at runtime.
+When `Main` is run without any parameters, it starts 4 `ActorSystem`s in the same JVM which then form a single cluster. 
 
-![Architecture](images/hello-akka-architecture.png)
+Two of the nodes have the role `frontend` and simulate having an external interface, such as a REST API, where workloads can be posted. 
 
-First, the `main` class creates an `akka.actor.ActorSystem`, a container in which Actors run. Next, it creates three instances of a Greeter Actor and one instance of a Printer Actor. 
+One of the node has the role `worker` and accepts and processes workloads.
 
-The example then sends messages to the Greeter Actor instances, which store them internally. Finally, instruction messages to the Greeter Actors trigger them to send messages to the Printer Actor, which outputs them to the console:
+Two nodes have the role `backend` and contain an actor called `Master` which coordinates workloads from the frontend nodes, keep track of the workers, and delegate work to available workers. If one of these nodes goes down, the other one takes over its responsibilities.
 
-![Messages](images/hello-akka-messages.png)
+A bird's eye perspective of the architecture would look like this:
 
-Akka's use of Actors and asynchronous messaging result in a range of benefits. Consider a few.
+TODO maybe match the image with the default setup
+![Overview](images/overview.png)
 
-## Benefits of using the Actor Model
+The application was designed like this to support the following requirements:
 
-The following characteristics of Akka allow you to solve difficult concurrency and scalability challenges in an intuitive way: 
-
-* Event-driven model &#8212; Actors perform work in response to messages. Communication between Actors is asynchronous, allowing Actors to send messages and continue their own work without blocking to wait for a reply.
-* Strong isolation principles &#8212; Unlike regular objects in Scala, an Actor does not have a public API in terms of methods that you can invoke. Instead, its public API is defined through messages that the actor handles. This prevents any sharing of state between Actors; the only way to observe another actor's state is by sending it a message asking for it.
-* Location transparency &#8212; The system constructs Actors from a factory and returns references to the instances. Because location doesn't matter, Actor instances can start, stop, move, and restart to scale up and down as well as recover from unexpected failures. 
-* Lightweight &#8212; Each instance consumes only a few hundred bytes, which realistically allows millions of concurrent Actors to exist in a single application.
+ * elastic addition/removal of frontend nodes that receives work from clients
+ * elastic addition/removal of worker actors and worker nodes
+ * each worker hosting one or more workers
+ * jobs should not be lost, and if a worker fails, the job should be retried
+  
+The design is based on Derek Wyatt's blog post 
+[Balancing Workload Across Nodes with Akka 2](http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2) which is a bit old but a good description of
+the advantages of letting the workers pull work from the master instead of pushing work to
+the workers.
  
-Let's look at some best practices for working with Actors and messages in the context of the Hello World example.
+Let's look at the details of each part of the application:
 
 @@@index
 
-* [Define the Actors and messages](define-actors.md)
-* [Create the Actors](create-actors.md)
-* [Communicate with Actors](communicate-with-actors.md)
-* [The Main Class](main-class.md)
-* [Full Example](full-example.md)
-* [Testing Actors](testing-actors.md)
-* [Running the Application](running-the-application.md)
-* [IntelliJ](intellij-idea.md)
+* [A Closer Look at the Master](master.md)
+* [The Frontend](frontend.md)
+* [The Workers](worker.md)
+* [Piecing it All Together](all-together.md)
+* [Running the Application](running.md)
+* [Next Steps](next-steps.md)
 
 @@@
