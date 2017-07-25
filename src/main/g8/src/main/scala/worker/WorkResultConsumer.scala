@@ -11,6 +11,7 @@ object WorkResultConsumer {
   def props: Props = Props(new WorkResultConsumer)
 }
 
+// #work-result-consumer
 class WorkResultConsumer extends Actor with ActorLogging {
 
   val mediator = DistributedPubSub(context.system).mediator
@@ -23,3 +24,4 @@ class WorkResultConsumer extends Actor with ActorLogging {
   }
 
 }
+// #work-result-consumer

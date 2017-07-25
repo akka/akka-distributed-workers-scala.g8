@@ -54,39 +54,39 @@ Congratulations, you just ran your first Akka Cluster app. Now take a look at wh
 
 ## What happens when you run it
 
-When `Main` is run without any parameters, it starts 4 `ActorSystem`s in the same JVM which then form a single cluster. 
+When `Main` is run without any parameters, it starts 6 `ActorSystem`s in the same JVM which then form a single cluster. 
 
 Two of the nodes have the role `frontend` and simulate having an external interface, such as a REST API, where workloads can be posted. 
 
-One of the node has the role `worker` and accepts and processes workloads.
+Two of the nodes has the role `worker` and starts two worker actors each that accept and process workloads.
 
 Two nodes have the role `backend` and contain an actor called `Master` which coordinates workloads from the frontend nodes, keep track of the workers, and delegate work to available workers. If one of these nodes goes down, the other one takes over its responsibilities.
 
 A bird's eye perspective of the architecture would look like this:
 
-TODO maybe match the image with the default setup
-![Overview](images/overview.png)
+![Overview](images/cluster-nodes.png)
 
 The application was designed like this to support the following requirements:
 
  * elastic addition/removal of frontend nodes that receives work from clients
  * elastic addition/removal of worker actors and worker nodes
  * each worker hosting one or more workers
+ * the number of workers on each worker should not have to be the same across all workers 
  * jobs should not be lost, and if a worker fails, the job should be retried
   
 The design is based on Derek Wyatt's blog post 
-[Balancing Workload Across Nodes with Akka 2](http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2) which is a bit old but a good description of
-the advantages of letting the workers pull work from the master instead of pushing work to
-the workers.
+[Balancing Workload Across Nodes with Akka 2](http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2) 
+from 2009, which is a bit old, but still a good description of the advantages of letting the workers pull work from the master 
+instead of pushing work to the workers.
  
 Let's look at the details of each part of the application:
 
 @@@index
 
-* [A Closer Look at the Master](master.md)
-* [The Frontend](frontend.md)
-* [The Workers](worker.md)
-* [Piecing it All Together](all-together.md)
+* [The Backend Nodes](backend.md)
+* [The Frontend Nodes](frontend.md)
+* [The Worker Nodes](worker.md)
+* [The Master Actor in Detail](master-in-detail.md)
 * [Running the Application](running.md)
 * [Next Steps](next-steps.md)
 

@@ -87,6 +87,23 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
           sender() ! MasterWorkerProtocol.WorkIsReady
       }
 
+    // #graceful-remove
+    case MasterWorkerProtocol.DeRegisterWorker(workerId) =>
+      workers.get(workerId) match {
+        case Some(WorkerState(_, Busy(workId, _), _)) =>
+          // there was a workload assigned to the worker when it left
+          log.info("Busy worker de-registered: {}", workerId)
+          persist(WorkerFailed(workId)) { event ⇒
+            workState = workState.updated(event)
+            notifyWorkers()
+          }
+        case Some(_) =>
+          log.info("Worker de-registered: {}", workerId)
+        case _ =>
+      }
+      workers -= workerId
+    // #graceful-remove
+
     case MasterWorkerProtocol.WorkerRequestsWork(workerId) =>
       if (workState.hasWork) {
         workers.get(workerId) match {
@@ -133,6 +150,7 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
         }
       }
 
+    // #persisting
     case work: Work =>
       // idempotent
       if (workState.isAccepted(work.workId)) {
@@ -146,7 +164,9 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
           notifyWorkers()
         }
       }
+    // #persisting
 
+    // #pruning
     case CleanupTick =>
       workers.foreach {
         case (workerId, WorkerState(_, Busy(workId, timeout), _)) if timeout.isOverdue() =>
@@ -164,6 +184,7 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
 
         case _ => // this one is a keeper!
       }
+    // #pruning
   }
 
   def notifyWorkers(): Unit =

@@ -1,13 +1,7 @@
 ## Run the Application
 
-Open the <a href="#run" class="shortcut">Run</a> tab and select `worker.Main` followed
-by Restart. On the left-hand side we can see the console output, which is logging output
-from nodes joining the cluster, the simulated work and results.
-
-The <a href="#code/src/main/scala/worker/Main.scala" class="shortcut">worker.Main</a>
-starts three actor systems in the same JVM process. It can be more
-interesting to run them in separate processes. <b>Stop</b> the application in the
-<a href="#run" class="shortcut">Run</a> tab and then open three terminal windows.
+When running the applicaiton without parameters it runs a six node cluster within the same JVM. It can be more
+interesting to run them in separate processes. Open three terminal windows.
 
 In the first terminal window, start the first seed node with the following command:
 
@@ -34,19 +28,16 @@ not processed.
 In the third terminal window, start a worker node with the following command:
 
 ```bash
-sbt "runMain worker.Main 0"
+sbt "runMain worker.Main 5001 3"
 ```
 
-Now you don't need to specify the port number, 0 means that it will use a random available port.
-This worker node is not part of the cluster, but it connects to one of the configured cluster
-nodes via the `ClusterClient`. Look at the log output in the different terminal
+5001 means the node will be a worker node, and the second parameter `3` means that it will host three worker actors.
+
+Look at the log output in the different terminal
 windows. In the second window (frontend) you should see that the produced jobs are processed
 and logged as `"Consumed result"`.
 
-Take a look at the logging that is done in 
-<a href="#code/src/main/scala/worker/WorkProducer.scala" class="shortcut">WorkProducer.scala</a>,
-<a href="#code/src/main/scala/worker/Master.scala" class="shortcut">Master</a>
-and <a href="#code/src/main/scala/worker/Worker.scala" class="shortcut">Worker.scala</a>.
+Take a look at the logging that is done in `WorkProducer`, `Master` and `Worker`.
 Identify the corresponding log entries in the 3 terminal windows.
 
 Shutdown the worker node (third terminal window) with `ctrl-c`.
@@ -54,7 +45,7 @@ Observe how the `"Consumed result"` logs in the frontend node (second terminal w
 stops. Start the worker node again.
 
 ```bash
-sbt "runMain worker.Main 0"
+sbt "runMain worker.Main 5001 3"
 ```
 
 You can also start more such worker nodes in new terminal windows.
@@ -67,15 +58,20 @@ sbt "runMain worker.Main 2552"
 
 You can start more cluster frontend nodes using port numbers between 3000-3999:
 
-```
+```bash
 sbt "runMain worker.Main 3002"		
 ```
 
-Note that this sample runs the 
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/persistence.html#Shared_LevelDB_journal" target="_blank">shared LevelDB journal</a>
-on the node with port 2551. This is a single point of failure, and should not be used in production. 
-A real system would use a 
-<a href="http://akka.io/community/" target="_blank">distributed journal</a>.
+Any port outside these ranges creates a worker node, for which you can also play around with the number of worker actors on using the second parameter. 
+
+```bash
+sbt "runMain worker.Main 5009 4"		
+```
+
+## The journal 
+
+Note that this sample runs the [shared LevelDB journal](http://doc.akka.io/docs/akka/current/scala/persistence.html#shared-leveldb-journal)
+on the node with port 2551. This is a single point of failure, if you kill this node the sample app will not continue working. This is not something to you should be using in production, a real system would use a distributed journal.
 
 The files of the shared journal are saved in the target directory and when you restart
 the application the state is recovered. You can clean the state with:

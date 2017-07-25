@@ -53,15 +53,18 @@ object Main {
   /**
    * Start a front end node that will submit work to the backend nodes
    */
+  // #frontend
   def startFrontend(port: Int): Unit = {
     val system = ActorSystem("ClusterSystem", config(port, "frontend"))
     system.actorOf(Frontend.props, "frontend")
     system.actorOf(WorkResultConsumer.props, "consumer")
   }
+  // #frontend
 
   /**
    * Start a worker node, with n actual workers that will accept and process workloads
    */
+  // #worker
   def startWorker(port: Int, workers: Int): Unit = {
     val system = ActorSystem("ClusterSystem", config(port, "worker"))
     for {
@@ -70,7 +73,7 @@ object Main {
       system.actorOf(Worker.props(), s"worker-$n")
     }
   }
-
+  // #worker
 
   def config(port: Int, role: String): Config =
     ConfigFactory.parseString(s"""

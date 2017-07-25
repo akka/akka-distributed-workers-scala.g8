@@ -1,22 +1,16 @@
-# The Worker
+# The Worker Nodes
 
-You can see how a worker is started in the method `startWorker`
-in <a href="#code/src/main/scala/worker/Main.scala" class="shortcut">Main.scala</a>
+You can see how a worker node and a number of worker actors is started in the method `Main.startWorker`:
 
-Open <a href="#code/src/main/scala/worker/Worker.scala" class="shortcut">Worker.scala</a>.
+@@snip [Main.scala]($g8src$/scala/worker/Main.scala) { #worker }
 
-The worker register itself periodically to the master, see the `registerTask`.
-This has the nice characteristics that master and worker can be started in any order, and
-in case of master fail over the worker re-register itself to the new master.
+When the worker receives work from the master it delegates the actual processing to a child actor, `WorkExecutor`, to keep the worker responsive while executing the work.
 
-![Worker Registration](images/worker-registration.png)
+The worker actor registers to the `Master` node, so that it know which workers exist.
 
-The Frontend actor sends the work to the master actor.
+When the `Master` Actor has work ready, it sends a `WorkIsReady` message to all non-busy workers it knows about, and on the other end, only `Worker` Actors that are `idle` will reply to the `Master` with a `WorkerRequestsWork` message, the `Master` Actor then chooses one (the first) actor that replies and assigns the `Work` to it.
 
-![Frontend to Master Message Flow](images/frontend-master-message-flow.png)
-
-When the worker receives work from the master it delegates the actual processing to
-a child actor, <a href="#code/src/main/scala/worker/WorkExecutor.scala" class="shortcut">WorkExecutor</a>,
-to keep the worker responsive while executing the work.
+This creates back pressure in that the `Master` actor will not push more work onto the worker nodes than they can process. And while busy processing a workload, the `WorkIsReady` messages does not pile up in the worker inbox.
 
 ![Master to Worker Message Flow](images/master-worker-message-flow.png)
+

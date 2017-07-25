@@ -42,6 +42,7 @@ class Frontend extends Actor with ActorLogging {
 
   def receive = idle
 
+  // #frontend
   def idle: Receive = {
     case Tick =>
       workCounter += 1
@@ -70,6 +71,7 @@ class Frontend extends Actor with ActorLogging {
         sendWorkAndWaitForAccept(work)
     }
   }
+  // #frontend
 
   override def postStop(): Unit = {
     tickTask.foreach(_.cancel())

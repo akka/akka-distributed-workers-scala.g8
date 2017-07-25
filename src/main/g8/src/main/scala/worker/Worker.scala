@@ -97,6 +97,7 @@ class Worker()
 
   override def postStop(): Unit = {
     registerTask.cancel()
+    masterProxy ! DeRegisterWorker(workerId)
   }
 
 }

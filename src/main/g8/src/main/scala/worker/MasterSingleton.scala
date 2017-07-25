@@ -13,6 +13,7 @@ object MasterSingleton {
   private val singletonName = "master"
   private val singletonRole = "backend"
 
+  // #singleton
   def startSingleton(system: ActorSystem) = {
     val workTimeout = system.settings.config.getDuration("distributed-workers.work-timeout").getSeconds.seconds
 
@@ -24,8 +25,11 @@ object MasterSingleton {
       ),
       singletonName)
   }
+  // #singleton
 
+  // #proxy
   def proxyProps(system: ActorSystem) = ClusterSingletonProxy.props(
     settings = ClusterSingletonProxySettings(system).withRole(singletonRole),
     singletonManagerPath = s"/user/$singletonName")
+  // #proxy
 }
