@@ -1,7 +1,9 @@
+/**
+ * Copyright (C) 2009-2017 Lightbend Inc. <http://www.lightbend.com>
+ */
 package worker
 
-import akka.actor.{ActorIdentity, ActorPath, ActorSystem, Identify, PoisonPill, Props}
-import akka.cluster.singleton.{ClusterSingletonManager, ClusterSingletonManagerSettings}
+import akka.actor.{ActorIdentity, ActorPath, ActorSystem, Identify, Props}
 import akka.pattern.ask
 import akka.persistence.journal.leveldb.{SharedLeveldbJournal, SharedLeveldbStore}
 import akka.util.Timeout
@@ -11,73 +13,86 @@ import scala.concurrent.duration._
 
 object Main {
 
+  val backendPortRange = 2000 to 2999
+  val frontendPortRange = 3000 to 3999
+
   def main(args: Array[String]): Unit = {
-    if (args.isEmpty) {
-      // with no args, we run a few
-      // different nodes in the same JVM
-      startBackend(2551)
-      startBackend(2552)
-      Thread.sleep(2000)
-      startWorker(0)
-      Thread.sleep(2000)
-      startFrontend(0)
-    } else {
-      // if there is an int arg we use it
-      // to decide what kind of node this is
-      val port = args(0).toInt
-      if (2000 <= port && port <= 2999) startBackend(port)
-      else if (3000 <= port && port <= 3999) startFrontend(port)
-      else startWorker(port)
+    args.headOption.map(_.toInt) match {
+      case None => startClusterInSameJvm()
+      case Some(port) if backendPortRange.contains(port) => startBackend(port)
+      case Some(port) if frontendPortRange.contains(port) => startFrontend(port)
+      case Some(port) => startWorker(port, args.lift(1).map(_.toInt).getOrElse(1))
     }
   }
 
-  def startBackend(port: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", configWithPortAndRole(port, "backend"))
+  def startClusterInSameJvm(): Unit = {
+    // two backend nodes
+    startBackend(2551)
+    startBackend(2552)
+    // two frontend nodes
+    startFrontend(3000)
+    startFrontend(3001)
+    // two worker nodes with two worker actors each
+    startWorker(5001, 2)
+    startWorker(5002, 2)
+  }
 
-    val shouldRunSharedStore = port == 2551
+  /**
+   * Start a node with the role backend on the given port. (This may also
+   * start the shared journal, see below for details)
+   */
+  def startBackend(port: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "backend"))
     startupSharedJournal(
       system,
-      startStore = shouldRunSharedStore,
+      startStore = (port == 2551),
       path = ActorPath.fromString("akka.tcp://ClusterSystem@127.0.0.1:2551/user/store"))
-
-
-    val workTimeout = 10.seconds
-    system.actorOf(
-      ClusterSingletonManager.props(
-        Master.props(workTimeout),
-        PoisonPill,
-        ClusterSingletonManagerSettings(system).withRole("backend")
-      ),
-      "master")
-
+    MasterSingleton.startSingleton(system)
   }
 
+  /**
+   * Start a front end node that will submit work to the backend nodes
+   */
   def startFrontend(port: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", configWithPortAndRole(port, "frontent"))
-    val frontend = system.actorOf(Props[Frontend], "frontend")
-    system.actorOf(Props(classOf[WorkProducer], frontend), "producer")
-    system.actorOf(Props[WorkResultConsumer], "consumer")
+    val system = ActorSystem("ClusterSystem", config(port, "frontend"))
+    system.actorOf(Frontend.props, "frontend")
+    system.actorOf(WorkResultConsumer.props, "consumer")
   }
 
-  def startWorker(port: Int): Unit = {
-    // load worker.conf
-    val system = ActorSystem("ClusterSystem", configWithPortAndRole(port, "worker"))
-
-    system.actorOf(Worker.props(Props[WorkExecutor]), "worker")
+  /**
+   * Start a worker node, with n actual workers that will accept and process workloads
+   */
+  def startWorker(port: Int, workers: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "worker"))
+    for {
+      n <- 1 to workers
+    } {
+      system.actorOf(Worker.props(), s"worker-$n")
+    }
   }
 
+
+  def config(port: Int, role: String): Config =
+    ConfigFactory.parseString(s"""
+      akka.remote.netty.tcp.port=$port
+      akka.cluster.roles=[$role]
+    """).withFallback(ConfigFactory.load())
+
+  /**
+   * To simplify the sample we run a shared journal inside of the actor system. This avoids having
+   * the need to set up an actual (distributed) database and configure connections for that. For a
+   * real application you would run an actual database backing persistence.
+   *
+   * This means we add a single point of failure to the system, if the node running the journal is
+   * killed the sample will break.
+   */
   def startupSharedJournal(system: ActorSystem, startStore: Boolean, path: ActorPath): Unit = {
-    // The shared leveldb journal is just for the guide, in a real application you
-    // would be running an actual database to persist the journal to
-
-    // Start the shared journal one one node (don't crash this SPOF)
-    // This will not be needed with a distributed journal
     if (startStore)
       system.actorOf(Props[SharedLeveldbStore], "store")
     // register the shared journal
     import system.dispatcher
     implicit val timeout = Timeout(15.seconds)
-    val f = system.actorSelection(path) ? Identify(None)
+    val f = (system.actorSelection(path) ? Identify(None))
     f.onSuccess {
       case ActorIdentity(_, Some(ref)) => SharedLeveldbJournal.setStore(ref, system)
       case _ =>
@@ -90,11 +105,4 @@ object Main {
         system.terminate()
     }
   }
-
-  def configWithPortAndRole(port: Int, role: String): Config =
-    ConfigFactory.parseString(s"""
-        akka.remote.netty.tcp.port=$port
-        akka.cluster.roles=[$role]
-      """
-    ).withFallback(ConfigFactory.load()) // fallback to application.conf for other settings
 }

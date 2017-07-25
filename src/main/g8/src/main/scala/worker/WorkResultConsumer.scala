@@ -1,9 +1,15 @@
+/**
+ * Copyright (C) 2009-2017 Lightbend Inc. <http://www.lightbend.com>
+ */
 package worker
 
-import akka.actor.Actor
-import akka.actor.ActorLogging
+import akka.actor.{Actor, ActorLogging, Props}
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator
+
+object WorkResultConsumer {
+  def props: Props = Props(new WorkResultConsumer)
+}
 
 class WorkResultConsumer extends Actor with ActorLogging {
 
