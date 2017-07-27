@@ -1,6 +1,6 @@
 # Next Steps
 
-The following are some ideas where to take this sample next. Implementation is left to the reader as a good exercise.
+The following are some ideas where to take this sample next. Implementations for each idea is left to the reader as good exercises.
 
 ## Using a different serializer
 

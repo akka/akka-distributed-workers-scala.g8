@@ -1,28 +1,26 @@
 # The Master Actor in Detail
 
-Let's revisit the `Master` Actor since it without question is the most involved component in the guide.
+The `Master` actor is it without question the most involved component in the guide.
 
-In a real application you might want to try to separate concerns to a larger extent, but as this comes with a cost with regards to getting an overview we have decided to keep a few somewhat separate aspects in the same class.
+If the `back-end` node hosting the `Master` actor would crash the Akka Cluster Singleton makes sure it starts up on a different node, but we would also want it to reach the exact same state as the crashed node `Master`. This is achieved through use of event sourcing and [Akka Persistence](http://doc.akka.io/docs/akka/current/scala/persistence.html).
 
 ## Modelling the set of current work items 
 
-The `WorkState` keeps track of the current set of work that is pending, has been accepted by a worker, has completed etc. Every change to the `WorkState` is modelled as a domain event: 
+The current set of work item is modelled in the `WorkState` class. It keeps track of the current set of work that is pending, has been accepted by a worker, has completed etc. Every change to the `WorkState` is modelled as a domain event: 
 
 @@snip [WorkState.scala]($g8src$/scala/worker/WorkState.scala) { #events }
 
 This allows us to capture and store each such event that happens, we can later replaying all of them on an empty model and arrive at the exact same state. This is how event sourcing and [Akka Persistence](http://doc.akka.io/docs/akka/current/scala/persistence.html) allows us to start the actor (possibly on a different node) and reach the same state as a previous instance.
 
-Inside of the actor this means that any time the `WorkState` is modified, we must first `persist` the event, and not until we know that was successful we can apply the event to the state. If it would be the other way around we could apply a change, have the write fail, and be in a state a replaying node could not reach.
+Inside of the actor this means that any time the `WorkState` is modified, we must first `persist` the event before acting on it. Not until we know the event was successfully stored we can apply the modification to the state. If we would apply it before persisting we could apply a change, have the write fail, and be in a state a replaying node could not reach.
 
 Let's look at how a command to process a work item from the front-end comes in:
 
 @@snip [Master.scala]($g8src$/scala/worker/Master.scala) { #persisting }
 
-The first thing you might notice is the comment saying `idempotent`, this means that the same work message may arrive multiple times, but regardless how many times it comes in, it should only be executed once. This is needed since the `FrontEnd` actor re-sends work in case of the `Work` or `Ack` messages getting lost (Akka does not provide any guarantee of delivery, [see details in the docs](http://doc.akka.io/docs/akka/current/scala/general/message-delivery-reliability.html#discussion-why-no-guaranteed-delivery-)).
+The first thing you might notice is the comment saying _idempotent_, this means that the same work message may arrive multiple times, but regardless how many times the same work arrives, it should only be executed once. This is needed since the `FrontEnd` actor re-sends work in case of the `Work` or `Ack` messages getting lost (Akka does not provide any guarantee of delivery, [see details in the docs](http://doc.akka.io/docs/akka/current/scala/general/message-delivery-reliability.html#discussion-why-no-guaranteed-delivery-)).
 
-To make the logic idempotent we simple check if the work id is already known, and if it is we simply `Ack` it without further logic.
-
-If the work is previously unknown, we start by transforming it into a `WorkAccepted` event, which we persist, and only in the `handler`-function passed to `persist` do we actually update the `workState`, send an `Ack` back to the `FrontEnd` and trigger a search for available workers.
+To make the logic idempotent we simple check if the work id is already known, and if it is we simply `Ack` it without further logic. If the work is previously unknown, we start by transforming it into a `WorkAccepted` event, which we persist, and only in the `handler`-function passed to `persist` do we actually update the `workState`, send an `Ack` back to the `FrontEnd` and trigger a search for available workers.
 
 
 ## Akka Persistence differences from regular Actors
@@ -49,4 +47,4 @@ When stopping a `Worker` Actor still tries to gracefully remove it self using th
 
 @@snip [Master.scala]($g8src$/scala/worker/Master.scala) { #graceful-remove }
 
-
+Now let's move on to the last piece of the puzzle, the worker nodes.

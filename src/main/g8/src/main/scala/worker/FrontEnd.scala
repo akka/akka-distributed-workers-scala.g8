@@ -24,6 +24,7 @@ object FrontEnd {
   private case object Retry
 }
 
+// #front-end
 class FrontEnd extends Actor with ActorLogging {
   import FrontEnd._
   import context.dispatcher
@@ -42,38 +43,39 @@ class FrontEnd extends Actor with ActorLogging {
 
   def receive = idle
 
-  // #front-end
   def idle: Receive = {
     case Tick =>
       workCounter += 1
       log.info("Produced work: {}", workCounter)
       val work = Work(nextWorkId(), workCounter)
-      context.become(sendWorkAndWaitForAccept(work))
+      sendWorkAndWaitForAccept(work)
   }
 
-  def sendWorkAndWaitForAccept(work: Work): Receive = {
+  def sendWorkAndWaitForAccept(work: Work) = {
     implicit val timeout = Timeout(5.seconds)
     (masterProxy ? work).recover {
       case _ => NotOk
     } pipeTo self
 
-    {
-      case Master.Ack(_) =>
-        val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
-        tickTask = Some(scheduler.scheduleOnce(nextTick, self, Tick))
-        context.become(idle)
-
-      case NotOk =>
-        log.info("Work not accepted, retry after a while")
-        tickTask = Some(scheduler.scheduleOnce(3.seconds, self, Retry))
-
-      case Retry =>
-        sendWorkAndWaitForAccept(work)
-    }
+    context.become(busy(work))
   }
-  // #front-end
+
+  def busy(workInProgress: Work): Receive = {
+    case Master.Ack(_) =>
+      val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
+      tickTask = Some(scheduler.scheduleOnce(nextTick, self, Tick))
+      context.become(idle)
+
+    case NotOk =>
+      log.info("Work not accepted, retry after a while")
+      tickTask = Some(scheduler.scheduleOnce(3.seconds, self, Retry))
+
+    case Retry =>
+      sendWorkAndWaitForAccept(workInProgress)
+  }
 
   override def postStop(): Unit = {
     tickTask.foreach(_.cancel())
   }
 }
+// #front-end
