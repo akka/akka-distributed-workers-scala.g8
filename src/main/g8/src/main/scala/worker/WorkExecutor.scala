@@ -24,7 +24,7 @@ class WorkExecutor extends Actor {
   import context.dispatcher
 
   def receive = {
-    case n: Int =>
+    case DoWork(n: Int) =>
       val n2 = n * n
       val result = s"$n * $n = $n2"
 

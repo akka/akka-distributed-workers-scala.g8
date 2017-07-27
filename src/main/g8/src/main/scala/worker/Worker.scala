@@ -35,7 +35,7 @@ class Worker()
 
   val registerTask = context.system.scheduler.schedule(0.seconds, registerInterval, masterProxy, RegisterWorker(workerId))
 
-  val workExecutor = startWorkExecutor()
+  val workExecutor = createWorkExecutor()
 
   var currentWorkId: Option[String] = None
   def workId: String = currentWorkId match {
@@ -82,7 +82,7 @@ class Worker()
 
   }
 
-  def startWorkExecutor(): ActorRef =
+  def createWorkExecutor(): ActorRef =
     // in addition to starting the actor we also watch it, so that
     // if it stops this worker will also be stopped
     context.watch(context.actorOf(WorkExecutor.props, "work-executor"))

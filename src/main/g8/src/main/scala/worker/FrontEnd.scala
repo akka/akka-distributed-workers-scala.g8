@@ -40,7 +40,6 @@ class FrontEnd extends Actor with ActorLogging {
 
   def scheduler = context.system.scheduler
 
-
   def receive = idle
 
   def idle: Receive = {
@@ -48,30 +47,30 @@ class FrontEnd extends Actor with ActorLogging {
       workCounter += 1
       log.info("Produced work: {}", workCounter)
       val work = Work(nextWorkId(), workCounter)
-      sendWorkAndWaitForAccept(work)
-  }
-
-  def sendWorkAndWaitForAccept(work: Work) = {
-    implicit val timeout = Timeout(5.seconds)
-    (masterProxy ? work).recover {
-      case _ => NotOk
-    } pipeTo self
-
-    context.become(busy(work))
+      context.become(busy(work))
   }
 
   def busy(workInProgress: Work): Receive = {
-    case Master.Ack(_) =>
+    case Master.Ack(workId) =>
+      log.info("Got ack for workId {}", workId)
       val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
       tickTask = Some(scheduler.scheduleOnce(nextTick, self, Tick))
       context.become(idle)
 
     case NotOk =>
-      log.info("Work not accepted, retry after a while")
+      log.info("Work {} not accepted, retry after a while", workInProgress.workId)
       tickTask = Some(scheduler.scheduleOnce(3.seconds, self, Retry))
 
     case Retry =>
-      sendWorkAndWaitForAccept(workInProgress)
+      log.info("Retrying work {}", workInProgress.workId)
+      sendWork(workInProgress)
+  }
+
+  def sendWork(work: Work): Unit = {
+    implicit val timeout = Timeout(5.seconds)
+    (masterProxy ? work).recover {
+      case _ => NotOk
+    } pipeTo self
   }
 
   override def postStop(): Unit = {
