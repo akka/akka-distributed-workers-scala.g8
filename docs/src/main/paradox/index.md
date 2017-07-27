@@ -1,11 +1,22 @@
 # Akka Distributed Workers with Scala Guide
  
 Akka is a toolkit and runtime for building highly concurrent, distributed, and fault-tolerant event-driven applications on the JVM. Akka can be used with both Java and Scala.
-This guide introduces Akka by describing the Scala version of the Hello World example. If you prefer to use Akka with Java, switch to the [Akka Distributed Workers with Java guide](http://developer.lightbend.com/guides/akka-quickstart-java/).
 
-This guide demonstrates more advanced usage of Akka and requires familiarity with Actors. If you have no previous experience with Actors you should start with [Akka Quickstart with Scala](http://developer.lightbend.com/guides/akka-quickstart-scala/) which goes through the basics.
+This guide introduces Akka clusters by describing the Scala version of a distributed workers example. If you prefer to use Akka with Java, switch to the [Akka Distributed Workers with Java guide](http://developer.lightbend.com/guides/akka-quickstart-java/).
 
-Within 30 minutes, you should be able to download and run the example and use this guide to understand how the example is constructed. This will get you started building distributed systems with Akka.
+The guide contains advanced usage of Akka and requires familiarity with Akka and Actors. If you have no previous experience with Actors you should start with [Akka Quickstart with Scala](http://developer.lightbend.com/guides/akka-quickstart-scala/) which goes through the basics.
+
+## Example overview
+
+To be reactive, distributed applications must deal gracefully with temporary and prolonged outages as well as have the ability to scale up and down to make the best use of resources. Akka clustering provides these capabilities so that you don't have to implement them yourself. The distributed workers example demonstrates the following Akka clustering capabilities (this is just a slightly reworded version of the more technical bulleted list below that explains the app requirements):
+
+ * elastic addition and removal of the front-end actors that accept client requests
+ * elastic addition and removal of the back-end actors that perform the work distribution of actors across different nodes
+ * how jobs are re-tried in the face of failures
+
+But before we dive into how the example accomplishes these goals, download the example and try it out!
+
+The design is based on Derek Wyatt's blog post [Balancing Workload Across Nodes with Akka 2](http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2) from 2009, which is a bit old, but still a good description of the advantages of letting the workers pull work from the master instead of pushing work to the workers.
 
 ## Downloading the example 
 
@@ -15,7 +26,7 @@ Download and unzip the example:
 
 1. Download the zip file from [Lightbend Tech Hub](http://dev.lightbend.com/start/?group=akka&project=akka-distributed-workers-scala) by clicking `CREATE A PROJECT FOR ME`. 
 1. Extract the zip file to a convenient location: 
-  - On Linux and OSX systems, open a terminal and use the command `unzip akka-distributed-workers-scala.zip`. Note: On OSX, if you unzip using Archiver, you also have to make the sbt files executable:
+  - On Linux and MacOS systems, open a terminal and use the command `unzip akka-distributed-workers-scala.zip`. Note: On MacOS, if you unzip using Archiver, you also have to make the sbt files executable:
 ```
  $ chmod u+x ./sbt
  $ chmod u+x ./sbt-dist/bin/sbt
@@ -31,7 +42,7 @@ To run the sample application, which starts a small cluster inside of the same J
     For example, if you used the default project name, akka-distributed-workers-scala, and extracted the project to your root directory,
     from the root directory, enter: `cd akka-distributed-workers-scala`
 
-1. Enter `./sbt` on OSX/Linux or `sbt.bat` on Windows to start sbt.
+1. Enter `./sbt` on MacOS/Linux or `sbt.bat` on Windows to start sbt.
  
     sbt downloads project dependencies. The `>` prompt indicates sbt has started in interactive mode.
 
@@ -54,40 +65,34 @@ Congratulations, you just ran your first Akka Cluster app. Now take a look at wh
 
 ## What happens when you run it
 
+When `Main` is run without any parameters, it starts six `ActorSystem`s in the same JVM. These six `ActorSystem`s form a single cluster. The six nodes include two each that perform front-end, back-end, and worker tasks:
+
+ * The front-end nodes simulate an external interface, such as a REST API, that accepts workloads from clients.
+ * The worker nodes have worker actors that accept and process workloads.
+ * The back-end nodes contain a Master actor that coordinates workloads, keeps track of the workers, and delegates work to available workers. One of the nodes is active and one is on standby. If the active Master goes down, the standby takes over.
+
+
 When `Main` is run without any parameters, it starts 6 `ActorSystem`s in the same JVM which then form a single cluster. 
 
-Two of the nodes have the role `frontend` and simulate having an external interface, such as a REST API, where workloads can be posted. 
+Two of the nodes have the role `front-end` and simulate having an external interface, such as a REST API, where workloads can be posted. 
 
 Two of the nodes has the role `worker` and starts two worker actors each that accept and process workloads.
 
-Two nodes have the role `backend` and contain an actor called `Master` which coordinates workloads from the frontend nodes, keep track of the workers, and delegate work to available workers. If one of these nodes goes down, the other one takes over its responsibilities.
+Two nodes have the role `back-end` and contain an actor called `Master` which coordinates workloads from the front-end nodes, keep track of the workers, and delegate work to available workers. If one of these nodes goes down, the other one takes over its responsibilities.
 
-A bird's eye perspective of the architecture would look like this:
+A bird's eye perspective of the architecture looks like this:
 
 ![Overview](images/cluster-nodes.png)
 
-The application was designed like this to support the following requirements:
-
- * elastic addition/removal of frontend nodes that receives work from clients
- * elastic addition/removal of worker actors and worker nodes
- * each worker hosting one or more workers
- * the number of workers on each worker should not have to be the same across all workers 
- * jobs should not be lost, and if a worker fails, the job should be retried
-  
-The design is based on Derek Wyatt's blog post 
-[Balancing Workload Across Nodes with Akka 2](http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2) 
-from 2009, which is a bit old, but still a good description of the advantages of letting the workers pull work from the master 
-instead of pushing work to the workers.
- 
-Let's look at the details of each part of the application:
+Let's look at the details of each part of the application, starting with the front-end.
 
 @@@index
 
-* [The Backend Nodes](backend.md)
-* [The Frontend Nodes](frontend.md)
-* [The Worker Nodes](worker.md)
+* [The Front-end Nodes](front-end.md)
+* [The Back-end Nodes](back-end.md)
 * [The Master Actor in Detail](master-in-detail.md)
-* [Running the Application](running.md)
+* [The Worker Nodes](worker.md)
+* [Experimenting with the example](experimenting.md)
 * [Next Steps](next-steps.md)
 
 @@@

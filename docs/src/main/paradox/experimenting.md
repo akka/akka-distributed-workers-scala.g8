@@ -12,7 +12,7 @@ sbt "runMain worker.Main 2551"
 2551 corresponds to the port of the first seed-nodes element in the configuration. In the log
 output you see that the cluster node has been started and changed status to 'Up'.
 
-In the second terminal window, start the frontend node with the following command:
+In the second terminal window, start the front-end node with the following command:
 
 ```bash
 sbt "runMain worker.Main 3001"		
@@ -34,14 +34,14 @@ sbt "runMain worker.Main 5001 3"
 5001 means the node will be a worker node, and the second parameter `3` means that it will host three worker actors.
 
 Look at the log output in the different terminal
-windows. In the second window (frontend) you should see that the produced jobs are processed
+windows. In the second window (front-end) you should see that the produced jobs are processed
 and logged as `"Consumed result"`.
 
 Take a look at the logging that is done in `WorkProducer`, `Master` and `Worker`.
 Identify the corresponding log entries in the 3 terminal windows.
 
 Shutdown the worker node (third terminal window) with `ctrl-c`.
-Observe how the `"Consumed result"` logs in the frontend node (second terminal window)
+Observe how the `"Consumed result"` logs in the front-end node (second terminal window)
 stops. Start the worker node again.
 
 ```bash
@@ -50,13 +50,13 @@ sbt "runMain worker.Main 5001 3"
 
 You can also start more such worker nodes in new terminal windows.
 
-You can start more cluster backend nodes using port numbers between 2000-2999:
+You can start more cluster back-end nodes using port numbers between 2000-2999:
 
 ```bash
 sbt "runMain worker.Main 2552"
 ```
 
-You can start more cluster frontend nodes using port numbers between 3000-3999:
+You can start more cluster front-end nodes using port numbers between 3000-3999:
 
 ```bash
 sbt "runMain worker.Main 3002"		

@@ -78,7 +78,7 @@ class DistributedWorkerSpec(_system: ActorSystem)
   def this() = this(ActorSystem("DistributedWorkerSpec", DistributedWorkerSpec.clusterConfig))
 
   val backendSystem: ActorSystem = {
-    val config = ConfigFactory.parseString("akka.cluster.roles=[backend]").withFallback(clusterConfig)
+    val config = ConfigFactory.parseString("akka.cluster.roles=[back-end]").withFallback(clusterConfig)
     ActorSystem("DistributedWorkerSpec", config)
   }
 
@@ -117,7 +117,7 @@ class DistributedWorkerSpec(_system: ActorSystem)
       ClusterSingletonManager.props(
         Master.props(workTimeout),
         PoisonPill,
-        ClusterSingletonManagerSettings(system).withRole("backend")),
+        ClusterSingletonManagerSettings(system).withRole("back-end")),
       "master")
 
 
@@ -131,13 +131,13 @@ class DistributedWorkerSpec(_system: ActorSystem)
 
     Cluster(system).join(clusterAddress)
     clusterProbe.expectMsgType[MemberUp]
-    val frontend = system.actorOf(Props[Frontend], "frontend")
+    val frontend = system.actorOf(Props[Frontend], "front-end")
 
     val results = TestProbe()
     DistributedPubSub(system).mediator ! Subscribe(Master.ResultsTopic, results.ref)
     expectMsgType[SubscribeAck]
 
-    // make sure pub sub topics are replicated over to the backend system before triggering any work
+    // make sure pub sub topics are replicated over to the back-end system before triggering any work
     within(10.seconds) {
       awaitAssert {
         DistributedPubSub(backendSystem).mediator ! GetTopics

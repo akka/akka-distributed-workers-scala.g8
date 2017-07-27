@@ -11,7 +11,7 @@ import scala.concurrent.duration._
 object MasterSingleton {
 
   private val singletonName = "master"
-  private val singletonRole = "backend"
+  private val singletonRole = "back-end"
 
   // #singleton
   def startSingleton(system: ActorSystem) = {

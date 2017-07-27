@@ -13,25 +13,25 @@ import scala.concurrent.duration._
 
 object Main {
 
-  val backendPortRange = 2000 to 2999
-  val frontendPortRange = 3000 to 3999
+  val backEndPortRange = 2000 to 2999
+  val frontEndPortRange = 3000 to 3999
 
   def main(args: Array[String]): Unit = {
     args.headOption.map(_.toInt) match {
       case None => startClusterInSameJvm()
-      case Some(port) if backendPortRange.contains(port) => startBackend(port)
-      case Some(port) if frontendPortRange.contains(port) => startFrontend(port)
+      case Some(port) if backEndPortRange.contains(port) => startBackEnd(port)
+      case Some(port) if frontEndPortRange.contains(port) => startFrontEnd(port)
       case Some(port) => startWorker(port, args.lift(1).map(_.toInt).getOrElse(1))
     }
   }
 
   def startClusterInSameJvm(): Unit = {
     // two backend nodes
-    startBackend(2551)
-    startBackend(2552)
-    // two frontend nodes
-    startFrontend(3000)
-    startFrontend(3001)
+    startBackEnd(2551)
+    startBackEnd(2552)
+    // two front-end nodes
+    startFrontEnd(3000)
+    startFrontEnd(3001)
     // two worker nodes with two worker actors each
     startWorker(5001, 2)
     startWorker(5002, 2)
@@ -41,8 +41,8 @@ object Main {
    * Start a node with the role backend on the given port. (This may also
    * start the shared journal, see below for details)
    */
-  def startBackend(port: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", config(port, "backend"))
+  def startBackEnd(port: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "back-end"))
     startupSharedJournal(
       system,
       startStore = (port == 2551),
@@ -53,13 +53,13 @@ object Main {
   /**
    * Start a front end node that will submit work to the backend nodes
    */
-  // #frontend
-  def startFrontend(port: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", config(port, "frontend"))
-    system.actorOf(Frontend.props, "frontend")
+  // #front-end
+  def startFrontEnd(port: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "front-end"))
+    system.actorOf(FrontEnd.props, "front-end")
     system.actorOf(WorkResultConsumer.props, "consumer")
   }
-  // #frontend
+  // #front-end
 
   /**
    * Start a worker node, with n actual workers that will accept and process workloads

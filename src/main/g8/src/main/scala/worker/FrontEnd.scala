@@ -13,19 +13,19 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 
 /**
- * Dummy frontend that periodically sends a workload to the master.
+ * Dummy front-end that periodically sends a workload to the master.
  */
-object Frontend {
+object FrontEnd {
 
-  def props: Props = Props(new Frontend)
+  def props: Props = Props(new FrontEnd)
 
   private case object NotOk
   private case object Tick
   private case object Retry
 }
 
-class Frontend extends Actor with ActorLogging {
-  import Frontend._
+class FrontEnd extends Actor with ActorLogging {
+  import FrontEnd._
   import context.dispatcher
 
   val masterProxy = context.actorOf(
@@ -42,7 +42,7 @@ class Frontend extends Actor with ActorLogging {
 
   def receive = idle
 
-  // #frontend
+  // #front-end
   def idle: Receive = {
     case Tick =>
       workCounter += 1
@@ -71,7 +71,7 @@ class Frontend extends Actor with ActorLogging {
         sendWorkAndWaitForAccept(work)
     }
   }
-  // #frontend
+  // #front-end
 
   override def postStop(): Unit = {
     tickTask.foreach(_.cancel())
