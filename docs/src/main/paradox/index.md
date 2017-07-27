@@ -71,15 +71,6 @@ When `Main` is run without any parameters, it starts six `ActorSystem`s in the s
  * The worker nodes have worker actors that accept and process workloads.
  * The back-end nodes contain a Master actor that coordinates workloads, keeps track of the workers, and delegates work to available workers. One of the nodes is active and one is on standby. If the active Master goes down, the standby takes over.
 
-
-When `Main` is run without any parameters, it starts 6 `ActorSystem`s in the same JVM which then form a single cluster. 
-
-Two of the nodes have the role `front-end` and simulate having an external interface, such as a REST API, where workloads can be posted. 
-
-Two of the nodes has the role `worker` and starts two worker actors each that accept and process workloads.
-
-Two nodes have the role `back-end` and contain an actor called `Master` which coordinates workloads from the front-end nodes, keep track of the workers, and delegate work to available workers. If one of these nodes goes down, the other one takes over its responsibilities.
-
 A bird's eye perspective of the architecture looks like this:
 
 ![Overview](images/cluster-nodes.png)
