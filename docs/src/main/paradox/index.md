@@ -2,7 +2,9 @@
  
 Akka is a toolkit and runtime for building highly concurrent, distributed, and fault-tolerant event-driven applications on the JVM. Akka can be used with both Java and Scala.
 
-This guide introduces Akka clusters by describing the Scala version of a distributed workers example. If you prefer to use Akka with Java, switch to the [Akka Distributed Workers with Java guide](http://developer.lightbend.com/guides/akka-quickstart-java/).
+This guide introduces Akka clusters by describing the Scala version of a distributed workers example. 
+
+A Java version of the guide is not yet available but will be soon, so check back in a while!
 
 The guide contains advanced usage of Akka and requires familiarity with Akka and Actors. If you have no previous experience with Actors you should start with [Akka Quickstart with Scala](http://developer.lightbend.com/guides/akka-quickstart-scala/) which goes through the basics.
 
