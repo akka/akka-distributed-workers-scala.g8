@@ -3,29 +3,44 @@
  */
 package worker
 
-import akka.actor.{ActorIdentity, ActorPath, ActorSystem, Identify, Props}
-import akka.pattern.ask
-import akka.persistence.journal.leveldb.{SharedLeveldbJournal, SharedLeveldbStore}
-import akka.util.Timeout
-import com.typesafe.config.{Config, ConfigFactory}
+import java.io.File
+import java.util.concurrent.CountDownLatch
 
-import scala.concurrent.duration._
+import akka.actor.ActorSystem
+import akka.persistence.cassandra.testkit.CassandraLauncher
+import com.typesafe.config.{Config, ConfigFactory}
 
 object Main {
 
+  // note that 2551 and 2552 are expected to be seed nodes though, even if
+  // the back-end starts at 2000
   val backEndPortRange = 2000 to 2999
+
   val frontEndPortRange = 3000 to 3999
 
   def main(args: Array[String]): Unit = {
-    args.headOption.map(_.toInt) match {
-      case None => startClusterInSameJvm()
-      case Some(port) if backEndPortRange.contains(port) => startBackEnd(port)
-      case Some(port) if frontEndPortRange.contains(port) => startFrontEnd(port)
-      case Some(port) => startWorker(port, args.lift(1).map(_.toInt).getOrElse(1))
+    args.headOption match {
+
+      case None =>
+        startClusterInSameJvm()
+
+      case Some(portString) if portString.matches("""\d+""") =>
+        val port = portString.toInt
+        if (backEndPortRange.contains(port)) startBackEnd(port)
+        else if (frontEndPortRange.contains(port)) startFrontEnd(port)
+        else startWorker(port, args.lift(1).map(_.toInt).getOrElse(1))
+
+      case Some("cassandra") =>
+        startCassandraDatabase()
+        println("Started Cassandra, press Ctrl + C to kill")
+        new CountDownLatch(1).await()
+
     }
   }
 
   def startClusterInSameJvm(): Unit = {
+    startCassandraDatabase()
+
     // two backend nodes
     startBackEnd(2551)
     startBackEnd(2552)
@@ -43,10 +58,6 @@ object Main {
    */
   def startBackEnd(port: Int): Unit = {
     val system = ActorSystem("ClusterSystem", config(port, "back-end"))
-    startupSharedJournal(
-      system,
-      startStore = (port == 2551),
-      path = ActorPath.fromString("akka.tcp://ClusterSystem@127.0.0.1:2551/user/store"))
     MasterSingleton.startSingleton(system)
   }
 
@@ -82,30 +93,23 @@ object Main {
     """).withFallback(ConfigFactory.load())
 
   /**
-   * To simplify the sample we run a shared journal inside of the actor system. This avoids having
-   * the need to set up an actual (distributed) database and configure connections for that. For a
-   * real application you would run an actual database backing persistence.
-   *
-   * This means we add a single point of failure to the system, if the node running the journal is
-   * killed the sample will break.
+   * To make the sample easier to run we kickstart a Cassandra instance to
+   * act as the journal. Cassandra is a great choice of backend for Akka Persistence but
+   * in a real application a pre-existing Cassandra cluster should be used.
    */
-  def startupSharedJournal(system: ActorSystem, startStore: Boolean, path: ActorPath): Unit = {
-    if (startStore)
-      system.actorOf(Props[SharedLeveldbStore], "store")
-    // register the shared journal
-    import system.dispatcher
-    implicit val timeout = Timeout(15.seconds)
-    val f = (system.actorSelection(path) ? Identify(None))
-    f.onSuccess {
-      case ActorIdentity(_, Some(ref)) => SharedLeveldbJournal.setStore(ref, system)
-      case _ =>
-        system.log.error("Shared journal not started at {}", path)
-        system.terminate()
-    }
-    f.onFailure {
-      case _ =>
-        system.log.error("Lookup of shared journal at {} timed out", path)
-        system.terminate()
+  def startCassandraDatabase(): Unit = {
+    val databaseDirectory = new File("target/cassandra-db")
+    CassandraLauncher.start(
+      databaseDirectory,
+      CassandraLauncher.DefaultTestConfigResource,
+      clean = false,
+      port = 9042
+    )
+
+    // shut the cassandra instance down when the JVM stops
+    sys.addShutdownHook {
+      CassandraLauncher.stop()
     }
   }
+
 }

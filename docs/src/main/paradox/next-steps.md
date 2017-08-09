@@ -12,14 +12,6 @@ For storing the domain events in a persistent journal, there is also the problem
 
 A few options to look into are listed in the [Akka Docs section on Serialization](http://doc.akka.io/docs/akka/current/scala/serialization.html#external-akka-serializers)
 
-## Using an actual database 
-
-This sample runs the [shared LevelDB journal](http://doc.akka.io/docs/akka/current/scala/persistence.html#shared-leveldb-journal)
-on the node with port 2551. This is a single point of failure, and should not be used in production. It also uses the file based snapshot store (although it does not actually take any snapshots of the `Master` actor state).
-
-A real system would use a distributed journal and snapshot store, for example [Apache Cassandra](https://github.com/akka/akka-persistence-cassandra)
-
-
 ## A HTTP Based API
 
 The `FrontEnd` in this sample is a dummy that automatically generates work. A real application could for example use [Akka HTTP](http://doc.akka.io/docs/akka-http/current/scala/http/introduction.html) to provide a HTTP REST (or other) API for external clients.

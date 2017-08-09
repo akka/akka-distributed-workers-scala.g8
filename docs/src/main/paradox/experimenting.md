@@ -1,8 +1,19 @@
 ## Experimenting with the example
 
-When running the applicaiton without parameters it runs a six node cluster within the same JVM. It can be more interesting to run them in separate processes. Open three terminal windows.
+When running the appliction without parameters it runs a six node cluster within the same JVM and starts a Cassandra database. It can be more interesting to run them in separate processes. Open four terminal windows.
 
-In the first terminal window, start the first seed node with the following command:
+In the first terminal window, start the Cassandra database with the following command:
+
+```bash 
+sbt "runMain worker.Main cassandra"
+```
+
+The Cassandra database will stay alive as long as you do not kill this process, when you want to stop it you can do that with `Ctrl + C`. Without the database the back-end nodes will not be able to start up.
+
+You could also run your own local installation of Cassandra given that it runs on the default port on localhost and does not require a password. 
+
+
+With the database running, go to the second terminal window and start the first seed node with the following command:
 
 ```bash
 sbt "runMain worker.Main 2551"
@@ -10,7 +21,7 @@ sbt "runMain worker.Main 2551"
 
 2551 corresponds to the port of the first seed-nodes element in the configuration. In the log output you see that the cluster node has been started and changed status to 'Up'.
 
-In the second terminal window, start the front-end node with the following command:
+In the third terminal window, start the front-end node with the following command:
 
 ```bash
 sbt "runMain worker.Main 3001"		
@@ -18,9 +29,9 @@ sbt "runMain worker.Main 3001"
 
 3001 is to the port of the node. In the log output you see that the cluster node has been started and joins the 2551 node and becomes a member of the cluster. Its status changed to 'Up'.
 
-Switch over to the first terminal window and see in the log output that the member joined. So far, no `Worker` has not been started, i.e. jobs are produced and accepted but not processed.
+Switch over to the second terminal window and see in the log output that the member joined. So far, no `Worker` has not been started, i.e. jobs are produced and accepted but not processed.
 
-In the third terminal window, start a worker node with the following command:
+In the fourth terminal window, start a worker node with the following command:
 
 ```bash
 sbt "runMain worker.Main 5001 3"
@@ -30,9 +41,9 @@ sbt "runMain worker.Main 5001 3"
 
 Look at the log output in the different terminal windows. In the second window (front-end) you should see that the produced jobs are processed and logged as `"Consumed result"`.
 
-Take a look at the logging that is done in `WorkProducer`, `Master` and `Worker`. Identify the corresponding log entries in the 3 terminal windows.
+Take a look at the logging that is done in `WorkProducer`, `Master` and `Worker`. Identify the corresponding log entries in the 3 terminal windows with Akka nodes.
 
-Shutdown the worker node (third terminal window) with `ctrl-c`. Observe how the `"Consumed result"` logs in the front-end node (second terminal window) stops. Start the worker node again.
+Shutdown the worker node (fourth terminal window) with `ctrl-c`. Observe how the `"Consumed result"` logs in the front-end node (second terminal window) stops. Start the worker node again.
 
 ```bash
 sbt "runMain worker.Main 5001 3"
@@ -60,9 +71,7 @@ sbt "runMain worker.Main 5009 4"
 
 ## The journal 
 
-Note that this sample runs the [shared LevelDB journal](http://doc.akka.io/docs/akka/current/scala/persistence.html#shared-leveldb-journal) on the node with port 2551. This is a single point of failure, if you kill this node the sample app will not continue working. This is not something to you should be using in production, a real system would use a distributed journal.
-
-The files of the shared journal are saved in the target directory and when you restart the application the state is recovered. You can clean the state with:
+The files of the Cassandra database are saved in the target directory and when you restart the application the state is recovered. You can clean the state with:
 
 ```bash
 sbt clean
