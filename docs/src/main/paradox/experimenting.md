@@ -51,11 +51,15 @@ sbt "runMain worker.Main 5001 3"
 
 You can also start more such worker nodes in new terminal windows.
 
-You can start more cluster back-end nodes using port numbers between 2000-2999:
+You can start more cluster back-end nodes using port numbers between 2000-2999. 
 
 ```bash
 sbt "runMain worker.Main 2552"
 ```
+
+The nodes with port 2551 to 2554 are configured to be used as "seed nodes" in this sample, if you shutdown all or start none of these the other nodes will not know how to join the cluster. If all four are shut down and 2551 is started it will join itself and form a new cluster. 
+
+As long as one of the four nodes is alive the cluster will keep working. You can read more about this in the [Akka documentation section on seed nodes](http://doc.akka.io/docs/akka/current/scala/cluster-usage.html).
 
 You can start more cluster front-end nodes using port numbers between 3000-3999:
 

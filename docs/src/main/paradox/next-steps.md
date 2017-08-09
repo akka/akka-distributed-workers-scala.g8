@@ -18,7 +18,7 @@ The `FrontEnd` in this sample is a dummy that automatically generates work. A re
 
 ## Scaling better with many masters
 
-If the singleton master becomes a bottleneck we could start several master actors and shard the jobs among them. For each shard of master/standby nodes we would use a separate cluster role name, e.g. "back-end-shard1", "back-end-shard2". We would also need to ensure that the shard masters got unique `entityId`s.
+If the singleton master becomes a bottleneck we could start several master actors and shard the jobs among them. This could be achieved by using [Akka Cluster Sharding](http://doc.akka.io/docs/akka/current/scala/cluster-sharding.html) with many `Master` actors as entities and a hash of some sort on the payload deciding which master it should go to.
 
 ## More tools for building distributed systems
 
