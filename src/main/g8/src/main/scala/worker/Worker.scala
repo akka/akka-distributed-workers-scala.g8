@@ -13,11 +13,11 @@ import scala.concurrent.duration._
  */
 object Worker {
 
-  def props(): Props = Props(new Worker())
+  def props(masterProxy: ActorRef): Props = Props(new Worker(masterProxy))
 
 }
 
-class Worker()
+class Worker(masterProxy: ActorRef)
   extends Actor with ActorLogging {
   import MasterWorkerProtocol._
   import context.dispatcher
@@ -25,10 +25,6 @@ class Worker()
 
   val workerId = UUID.randomUUID().toString
   val registerInterval = context.system.settings.config.getDuration("distributed-workers.worker-registration-interval").getSeconds.seconds
-
-  val masterProxy = context.actorOf(
-    MasterSingleton.proxyProps(context.system),
-    name = "masterProxy")
 
   val registerTask = context.system.scheduler.schedule(0.seconds, registerInterval, masterProxy, RegisterWorker(workerId))
 

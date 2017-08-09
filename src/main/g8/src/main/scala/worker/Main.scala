@@ -75,11 +75,13 @@ object Main {
   // #worker
   def startWorker(port: Int, workers: Int): Unit = {
     val system = ActorSystem("ClusterSystem", config(port, "worker"))
-    for {
-      n <- 1 to workers
-    } {
-      system.actorOf(Worker.props(), s"worker-$n")
-    }
+    val masterProxy = system.actorOf(
+      MasterSingleton.proxyProps(system),
+      name = "masterProxy")
+
+    (1 to workers).foreach(n =>
+      system.actorOf(Worker.props(masterProxy), s"worker-$n")
+    )
   }
   // #worker
 
