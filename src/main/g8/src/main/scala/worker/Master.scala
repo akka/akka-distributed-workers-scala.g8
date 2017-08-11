@@ -1,6 +1,6 @@
 package worker
 
-import akka.actor.{ActorLogging, ActorRef, Cancellable, Props}
+import akka.actor.{ActorLogging, ActorRef, Cancellable, Props, Timers}
 import akka.cluster.pubsub.{DistributedPubSub, DistributedPubSubMediator}
 import akka.persistence.{PersistentActor, RecoveryCompleted, SnapshotOffer}
 
@@ -27,7 +27,7 @@ object Master {
 
 }
 
-class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogging {
+class Master(workTimeout: FiniteDuration) extends PersistentActor with Timers with ActorLogging {
   import Master._
   import WorkState._
   import context.dispatcher
@@ -38,8 +38,7 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
     context.system.settings.config.getDuration("distributed-workers.consider-worker-dead-after").getSeconds.seconds
   def newStaleWorkerDeadline(): Deadline = considerWorkerDeadAfter.fromNow
 
-  val cleanupTask: Cancellable =
-    context.system.scheduler.schedule(workTimeout / 2, workTimeout / 2, self, CleanupTick)
+  timers.startPeriodicTimer("cleanup", CleanupTick, workTimeout / 2)
 
   val mediator: ActorRef = DistributedPubSub(context.system).mediator
 
@@ -203,7 +202,5 @@ class Master(workTimeout: FiniteDuration) extends PersistentActor with ActorLogg
 
   def tooLongSinceHeardFrom(lastHeardFrom: Long) =
     System.currentTimeMillis() - lastHeardFrom > considerWorkerDeadAfter.toMillis
-
-  override def postStop(): Unit = cleanupTask.cancel()
 
 }

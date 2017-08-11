@@ -3,7 +3,7 @@ package worker
 import java.util.UUID
 import java.util.concurrent.ThreadLocalRandom
 
-import akka.actor.{Actor, ActorLogging, Cancellable, Props}
+import akka.actor.{Actor, ActorLogging, Cancellable, Props, Timers}
 import akka.pattern._
 import akka.util.Timeout
 
@@ -22,7 +22,7 @@ object FrontEnd {
 }
 
 // #front-end
-class FrontEnd extends Actor with ActorLogging {
+class FrontEnd extends Actor with ActorLogging with Timers {
   import FrontEnd._
   import context.dispatcher
 
@@ -31,11 +31,12 @@ class FrontEnd extends Actor with ActorLogging {
     name = "masterProxy")
 
   var workCounter = 0
-  var tickTask: Option[Cancellable] = Some(scheduler.scheduleOnce(5.seconds, self, Tick))
 
   def nextWorkId(): String = UUID.randomUUID().toString
 
-  def scheduler = context.system.scheduler
+  override def preStart(): Unit = {
+    timers.startSingleTimer("tick", Tick, 5.seconds)
+  }
 
   def receive = idle
 
@@ -48,19 +49,23 @@ class FrontEnd extends Actor with ActorLogging {
   }
 
   def busy(workInProgress: Work): Receive = {
-    case Master.Ack(workId) =>
-      log.info("Got ack for workId {}", workId)
-      val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
-      tickTask = Some(scheduler.scheduleOnce(nextTick, self, Tick))
-      context.become(idle)
+    sendWork(workInProgress)
 
-    case NotOk =>
-      log.info("Work {} not accepted, retry after a while", workInProgress.workId)
-      tickTask = Some(scheduler.scheduleOnce(3.seconds, self, Retry))
+    {
+      case Master.Ack(workId) =>
+        log.info("Got ack for workId {}", workId)
+        val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
+        timers.startSingleTimer(s"tick", Tick, nextTick)
+        context.become(idle)
 
-    case Retry =>
-      log.info("Retrying work {}", workInProgress.workId)
-      sendWork(workInProgress)
+      case NotOk =>
+        log.info("Work {} not accepted, retry after a while", workInProgress.workId)
+        timers.startSingleTimer("retry", Retry, 3.seconds)
+
+      case Retry =>
+        log.info("Retrying work {}", workInProgress.workId)
+        sendWork(workInProgress)
+    }
   }
 
   def sendWork(work: Work): Unit = {
@@ -70,8 +75,5 @@ class FrontEnd extends Actor with ActorLogging {
     } pipeTo self
   }
 
-  override def postStop(): Unit = {
-    tickTask.foreach(_.cancel())
-  }
 }
 // #front-end
