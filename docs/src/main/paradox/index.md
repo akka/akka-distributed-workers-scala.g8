@@ -6,11 +6,11 @@ This guide introduces Akka clusters by describing the Scala version of a distrib
 
 A Java version of the guide is not yet available but will be soon, so check back in a while!
 
-The guide contains advanced usage of Akka and requires familiarity with Akka and Actors. If you have no previous experience with Actors you should start with [Akka Quickstart with Scala](http://developer.lightbend.com/guides/akka-quickstart-scala/) which goes through the basics.
+The guide contains advanced usage of Akka and requires familiarity with Akka and Actors. If you have no previous experience with Actors you should start with the [Akka Quickstart with Scala](http://developer.lightbend.com/guides/akka-quickstart-scala/), which goes through the basics.
 
 ## Example overview
 
-To be reactive, distributed applications must deal gracefully with temporary and prolonged outages as well as have the ability to scale up and down to make the best use of resources. Akka clustering provides these capabilities so that you don't have to implement them yourself. The distributed workers example demonstrates the following Akka clustering capabilities (this is just a slightly reworded version of the more technical bulleted list below that explains the app requirements):
+To be reactive, distributed applications must deal gracefully with temporary and prolonged outages as well as have the ability to scale up and down to make the best use of resources. Akka clustering provides these capabilities so that you don't have to implement them yourself. The distributed workers example demonstrates the following Akka clustering capabilities:
 
  * elastic addition and removal of the front-end actors that accept client requests
  * elastic addition and removal of the back-end actors that perform the work distribution of actors across different nodes

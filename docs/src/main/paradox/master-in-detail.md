@@ -1,5 +1,9 @@
 # The Master Actor in Detail
 
+The `Master` actor is without question the most involved component in this example. This is because it is designed to deal with failures. While the Akka cluster takes care of restarting the `Master` in case of a failure, we also want to make sure that the new `Master` can arrive at the same state as the failed `Master`. We use event sourcing and Akka Persistence to achieve this.
+
+
+
 The `Master` actor is it without question the most involved component in the guide.
 
 If the `back-end` node hosting the `Master` actor would crash the Akka Cluster Singleton makes sure it starts up on a different node, but we would also want it to reach the exact same state as the crashed node `Master`. This is achieved through use of event sourcing and [Akka Persistence](http://doc.akka.io/docs/akka/current/scala/persistence.html).

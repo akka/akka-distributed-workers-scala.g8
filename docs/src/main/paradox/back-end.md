@@ -1,14 +1,14 @@
 # The Back-End Nodes
 
-The back-end nodes hosts a single actor which is the heart of the solution: the `Master` actor which manages outstanding work, keeps track of available workers, and notifies registered workers when new work is available.
+The back-end nodes host the `Master` actor, which manages work, keeps track of available workers, and notifies registered workers when new work is available. The single `Master` actor is the heart of the solution, with built-in resilience provided by the []Akka Cluster Singleton](http://doc.akka.io/docs/akka/current/scala/guide/modules.html#cluster-singleton).
 
 ## The Master singleton
 
-The [Cluster Singleton](http://doc.akka.io/docs/akka/current/scala/guide/modules.html#cluster-singleton) tool in Akka makes sure an actor only runs concurrently on one node within the subset of nodes marked with the role `back-end` at any given time. It will run on the oldest such node, if that node is removed from the cluster the singleton will be started on the new oldest node. 
+The [Cluster Singleton](http://doc.akka.io/docs/akka/current/scala/guide/modules.html#cluster-singleton) tool in Akka makes sure an actor only runs concurrently on one node within the subset of nodes marked with the role `back-end` at any given time. It will run on the oldest back-end node. If the node on which the 'Master' is running is removed from the cluster, Akka starts a new `Master` on the next oldest node. Other nodes in the cluster interact with the `Master` through the `ClusterSingletonProxy` without knowing the explicit location. You can see this interaction in the `FrontEnd` and `Worker` actors.
+
+In case of the master node crashing and being removed from the cluster another master actor is automatically started on the new oldest node.
 
 ![Managed Singleton](images/singleton-manager.png)
-
-The tool also allows for interacting with the singleton from any node in the cluster without explicitly knowing where it runs, this is done through the `ClusterSingletonProxy`. You can see this in action in the `FrontEnd` and `Worker` actors.
 
 You can see how the master singleton is started in the method `startSingleton`
 in `MasterSingleton`:
@@ -21,9 +21,6 @@ The proxy is similarly configured, with the role where the singleton will be run
 
 @@snip [MasterSingleton.scala]($g8src$/scala/worker/MasterSingleton.scala) { #proxy }
 
-In case of the master node crashing and being removed from the cluster another master actor is automatically started on a standby node. The master on the standby node takes over the responsibility for outstanding work. Work in progress can continue and will be reported to the new master. 
-
-The state of the master is recovered on the standby node in the case of the node being lost through event sourcing. 
 
 An alternative to event sourcing and the singleton master would be to keep track of all jobs in a central database, but that is more complicated and not as scalable. In the end of the tutorial we will describe how multiple masters can be supported with a small adjustment.
 
