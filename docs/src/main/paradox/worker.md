@@ -1,12 +1,12 @@
 # The Worker Nodes
 
-When the worker receives work from the master it delegates the actual processing to a child actor, `WorkExecutor`, to keep the worker responsive while executing the work.
+`Worker` actors and the `Master` actor interact as follows:
 
-The worker actor registers to the `Master` node, so that it know which workers exist.
-
-When the `Master` actor has work ready, it sends a `WorkIsReady` message to all workers it thinks is not busy, only the `Worker` actors that are `idle` will reply to the `Master` with a `WorkerRequestsWork` message, the `Master` actor then chooses one (the first) actor that replies and assigns the `Work` to it.
-
-This creates achieves back pressure from busy nodes. The `Master` actor will not push more work onto the worker nodes than they can process. It also means that while a worker is busy processing a workload, the `WorkIsReady` messages does not pile up in the worker inbox as it is the `WorkExecutor` that is actually doing the processing.
+1. `Worker` actors register with the `Master` so the master knows they are available and ready to take on work.
+1. When the `Master` actor has work, it sends a 'WorkIsReady' message to all workers it things are not busy.
+`Worker` actors that are `idle` will reply to the `Master` with a `WorkerRequestsWork` message.
+1. The `Master` picks the first reply and assigns the work to that worker. This achieves back pressure because the `Master` does not push work on workers that are already busy and overwhelm their mailboxes.
+1. When the worker receives work from the master, it delegates the actual processing to a child actor, `WorkExecutor`. This allows the worker to be responsive while its child executes the work.
 
 ![Master to Worker Message Flow](images/master-worker-message-flow.png)
 

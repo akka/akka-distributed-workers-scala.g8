@@ -22,6 +22,8 @@ The proxy is similarly configured, with the role where the singleton will be run
 @@snip [MasterSingleton.scala]($g8src$/scala/worker/MasterSingleton.scala) { #proxy }
 
 
+The state of the master is recovered on the standby node in the case of the node being lost through event sourcing.
+
 An alternative to event sourcing and the singleton master would be to keep track of all jobs in a central database, but that is more complicated and not as scalable. In the end of the tutorial we will describe how multiple masters can be supported with a small adjustment.
 
 Let's now explore the implementation of the `Master` actor in depth.
