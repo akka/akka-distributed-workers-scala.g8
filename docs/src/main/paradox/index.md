@@ -1,273 +1,91 @@
-# Akka Distributed Workers
+# Akka Distributed Workers with Scala Guide
+ 
+Akka is a toolkit and runtime for building highly concurrent, distributed, and fault-tolerant event-driven applications on the JVM. Akka can be used with both Java and Scala.
 
-##The Goal
+This guide introduces Akka clusters by describing the Scala version of a distributed workers example. 
 
-Some applications need to distribute work to many machines because one single box
-obviously has limited resources. This tutorial will show one way to implement
-distributed workers using Akka cluster features.
+A Java version of the guide is not yet available but will be soon, so check back in a while!
 
-![Overview](images/overview.svg)
-		
-The solution should support:
+The guide contains advanced usage of Akka and requires familiarity with Akka and Actors. If you have no previous experience with Actors you should start with the [Akka Quickstart with Scala](http://developer.lightbend.com/guides/akka-quickstart-scala/), which goes through the basics.
 
- * elastic addition/removal of frontend nodes that receives work from clients
- * elastic addition/removal of worker actors and worker nodes
- * each worker node should be able to host one or more workers
- * jobs should not be lost, and if a worker fails, the job should be retried
+## Example overview
 
-The design is based on Derek Wyatt's blog post
-<a href="http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2"
-target="_blank">Balancing Workload Across Nodes with Akka 2</a>. This article describes
-the advantages of letting the workers pull work from the master instead of pushing work to
-the workers.
+To be reactive, distributed applications must deal gracefully with temporary and prolonged outages as well as have the ability to scale up and down to make the best use of resources. Akka clustering provides these capabilities so that you don't have to implement them yourself. The distributed workers example demonstrates the following Akka clustering capabilities:
 
-## Explore the Code - Master
+ * elastic addition and removal of the front-end actors that accept client requests
+ * elastic addition and removal of the back-end actors that perform the work distribution of actors across different nodes
+ * how jobs are re-tried in the face of failures
 
-The heart of the solution is the Master actor that manages outstanding work
-and notifies registered workers when new work is available.
+But before we dive into how the example accomplishes these goals, download the example and try it out!
 
-The Master actor is a singleton within the nodes with role "backend" in the cluster.
-This means that there will be one active master actor in the cluster. It runs on the
-oldest node.
+The design is based on Derek Wyatt's blog post [Balancing Workload Across Nodes with Akka 2](http://letitcrash.com/post/29044669086/balancing-workload-across-nodes-with-akka-2) from 2009, which is a bit old, but still a good description of the advantages of letting the workers pull work from the master instead of pushing work to the workers.
 
-You can see how the master singleton is started in the method <code>startBackend</code>
-in <a href="#code/src/main/scala/worker/Main.scala" class="shortcut">Main.scala</a>
+## Downloading the example 
 
+The Akka Distributed Workers example for Scala is a zipped project that includes a distribution of sbt (build tool). You can run it on Linux, MacOS, or Windows. The only prerequisite is Java 8.
 
-![Managed Singleton](images/singleton-manager.svg)
+Download and unzip the example:
 
-In case of failure of the master node another master actor is automatically started on
-a standby node. The master on the standby node takes over the responsibility for
-outstanding work. Work in progress can continue and will be reported to the new master.
-The state of the master can be re-created on the standby node using event sourcing.
-An alternative to event sourcing and the singleton master would be to keep track of all
-jobs in a central database, but that is more complicated and not as scalable. In the end
-of the tutorial we will describe how multiple masters can be supported with a small adjustment.
-
-The master actor is made available for workers by registering itself
-in the <a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-client.html"
-target="_blank">ClusterReceptionist</a>.
-
-The frontend actor talks to the master actor via the
-in the <a href="http://doc.akka.io/docs/akka/2.4.0/scala/distributed-pub-sub.html"
-target="_blank">ClusterSingletonProxy</a>.
-
-Later we will explore the implementation of the <a href="#code/src/main/scala/worker/Master.scala" class="shortcut">Master</a>
-actor in depth, but first we will take a look at the frontend and worker that interacts with the master.
-
-## Explore the Code - Front End
-
-A typical frontend provides a RESTful API that is used by the clients to submit (POST) jobs.
-When the service has accepted the job it returns Created/201 response code to the client.
-If it can't accept the job it returns a failure response code and the client has to retry or
-discard the job.
-
-In this example the frontend is emulated, for simplicity, by an ordinary actor, see
-<a href="#code/src/main/scala/worker/Frontend.scala" class="shortcut">Frontend.scala</a>
-and client requests are simulated by the
-<a href="#code/src/main/scala/worker/WorkProducer.scala" class="shortcut">WorkProducer.scala</a>.
-As you can see the <code>Frontend</code> actor sends the work to the active master via the
-<code>ClusterSingletonProxy</code>. It doesn't care about the exact location of the
-master. Somewhere in the cluster there should be one master actor running.
-The message is sent with <code>ask/?</code> to be able to reply to the client (<code>WorkProducer</code>)
-when the job has been accepted or denied by the master.
-
-![Frontend to Master Message Flow](images/frontend-master-message-flow.svg)
-
-You can see how a Frontend and WorkProducer actor is started in the method <code>startFrontend</code>
-in <a href="#code/src/main/scala/worker/Main.scala" class="shortcut">Main.scala</a>
-
-## Explore the Code - Worker</h2>
-
-You can see how a worker is started in the method <code>startWorker</code>
-in <a href="#code/src/main/scala/worker/Main.scala" class="shortcut">Main.scala</a>
-
-Open <a href="#code/src/main/scala/worker/Worker.scala" class="shortcut">Worker.scala</a>.
-
-The worker register itself periodically to the master, see the <code>registerTask</code>.
-This has the nice characteristics that master and worker can be started in any order, and
-in case of master fail over the worker re-register itself to the new master.
-
-![Worker Registration](images/worker-registration.svg)
-
-The Frontend actor sends the work to the master actor.
-
-![Frontend to Master Message Flow](images/frontend-master-message-flow.svg)
-
-When the worker receives work from the master it delegates the actual processing to
-a child actor, <a href="#code/src/main/scala/worker/WorkExecutor.scala" class="shortcut">WorkExecutor</a>,
-to keep the worker responsive while executing the work.
-
-![Master to Worker Message Flow](images/master-worker-message-flow.svg)
-
-## Explore the Code - Master Revisited
-
-Now when we know more about the Worker and Frontend that interacts with the Master it
-is time to take a closer look at
-<a href="#code/src/main/scala/worker/Master.scala" class="shortcut">Master.scala</a>.
-
-Workers register itself to the master with <code>RegisterWorker</code>. Each worker
-has an unique identifier and the master keeps track of the workers, including current
-<code>ActorRef</code> (sender of <code>RegisterWorker</code> message) that can be used
-for sending notifications to the worker. This <code>ActorRef</code> is not a direct
-link to the worker actor, but messages sent to it will be delivered to the worker.
-When using the cluster client messages are are tunneled via the receptionist on some
-node in the cluster to avoid inbound connections from other cluster nodes to the client.
-
-When the master receives <code>Work</code> from frontend it adds the work item to
-the queue of pending work and notifies idle workers with <code>WorkIsReady</code> message.
-
-To be able to restore same state in case of fail over to a standby master actor the
-changes (domain events) are stored in an append only transaction log and can be replayed
-when standby actor is started.
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/persistence.html" target="_blank">Akka Persistence</a>
-is used for that. <a href="#code/src/main/scala/worker/Master.scala" class="shortcut">Master</a> extends
-<code>PersistentActor</code> and events are stored in with the calls to the <code>persist</code>
-method. When the domain event has been saved successfully the master replies
-with an acknowledgement message (<code>Ack</code>) to the frontend.
-The master also keeps track of accepted work identifiers to be able to discard duplicates
-sent from the frontend.
-
-![Frontend to Master Message Flow](images/frontend-master-message-flow.svg)
-
-When a worker receives <code>WorkIsReady</code> it sends back <code>WorkerRequestsWork</code>
-to the master, which hands out the work, if any, to the worker. The master keeps track of that
-the worker is busy and expect a result within a deadline. For long running jobs the worker
-could send progress messages, but that is not implemented in the example.
-
-![Master to Worker Message Flow](images/master-worker-message-flow.svg)
-
-When the worker sends <code>WorkIsDone</code> the master updates its state of the worker
-and sends acknowledgement back to the worker. This message must also be idempotent as the worker will
-re-send if it doesn't receive the acknowledgement.
-
-![When Work is Done](images/master-worker-message-flow-2.svg)
-
-## Summary
-
-The <a href="#code/src/main/scala/worker/Master.scala" class="shortcut">Master</a> actor
-is a <a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-singleton.html"
-target="_blank">Cluster Singleton</a> and register itself in the 
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-client.html" target="_blank">Cluster Receptionist</a>.
-The <code>Master</code> is using 
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/persistence.html" target="_blank">Akka Persistence</a>
-to store incoming jobs and state.
-
-The <a href="#code/src/main/scala/worker/Frontend.scala" class="shortcut">Frontend</a> actor send work
-to the master via the <code>ClusterSingletonProxy</code>.
-
-The <a href="#code/src/main/scala/worker/Worker.scala" class="shortcut">Worker</a> communicate with the
-cluster and its master with the <a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-client.html"
-target="_blank">Cluster Client</a>.
-
-![Cluster Nodes](images/cluster-nodes.svg)
-
-## Run the Application
-
-Open the <a href="#run" class="shortcut">Run</a> tab and select <code>worker.Main</code> followed
-by Restart. On the left-hand side we can see the console output, which is logging output
-from nodes joining the cluster, the simulated work and results.
-
-The <a href="#code/src/main/scala/worker/Main.scala" class="shortcut">worker.Main</a>
-starts three actor systems in the same JVM process. It can be more
-interesting to run them in separate processes. <b>Stop</b> the application in the
-<a href="#run" class="shortcut">Run</a> tab and then open three terminal windows.
-
-In the first terminal window, start the first seed node with the following command:
-
-```bash
-sbt "runMain worker.Main 2551"
+1. Download the zip file from [Lightbend Tech Hub](http://dev.lightbend.com/start/?group=akka&project=akka-distributed-workers-scala) by clicking `CREATE A PROJECT FOR ME`. 
+1. Extract the zip file to a convenient location: 
+  - On Linux and MacOS systems, open a terminal and use the command `unzip akka-distributed-workers-scala.zip`. Note: On MacOS, if you unzip using Archiver, you also have to make the sbt files executable:
 ```
-
-2551 corresponds to the port of the first seed-nodes element in the configuration. In the log
-output you see that the cluster node has been started and changed status to 'Up'.
-
-In the second terminal window, start the frontend node with the following command:
-
-```bash
-sbt "runMain worker.Main 3001"		
+ $ chmod u+x ./sbt
+ $ chmod u+x ./sbt-dist/bin/sbt
 ```
+  - On Windows, use a tool such as File Explorer to extract the project. 
 
-3001 is to the port of the node. In the log output you see that the cluster node has been started
-and joins the 2551 node and becomes a member of the cluster. Its status changed to 'Up'.
+## Running the example
 
-Switch over to the first terminal window and see in the log output that the member joined.
-So far, no <code>Worker</code> has not been started, i.e. jobs are produced and accepted but
-not processed.
+To run the sample application, which starts a small cluster inside of the same JVM instance:
 
-In the third terminal window, start a worker node with the following command:
+1. In a console, change directories to the top level of the unzipped project.
+ 
+    For example, if you used the default project name, akka-distributed-workers-scala, and extracted the project to your root directory,
+    from the root directory, enter: `cd akka-distributed-workers-scala`
 
-```bash
-sbt "runMain worker.Main 0"
+1. Enter `./sbt` on MacOS/Linux or `sbt.bat` on Windows to start sbt.
+ 
+    sbt downloads project dependencies. The `>` prompt indicates sbt has started in interactive mode.
+
+1. At the sbt prompt, enter `run`.
+ 
+    sbt builds the project and runs the `Main` of the project:
+
+After waiting a few seconds for the cluster to form the output should start look _something_ like this (scroll all the way to the right to see the Actor output):
+ 
 ```
-
-Now you don't need to specify the port number, 0 means that it will use a random available port.
-This worker node is not part of the cluster, but it connects to one of the configured cluster
-nodes via the <code>ClusterClient</code>. Look at the log output in the different terminal
-windows. In the second window (frontend) you should see that the produced jobs are processed
-and logged as <code>"Consumed result"</code>.
-
-Take a look at the logging that is done in 
-<a href="#code/src/main/scala/worker/WorkProducer.scala" class="shortcut">WorkProducer.scala</a>,
-<a href="#code/src/main/scala/worker/Master.scala" class="shortcut">Master</a>
-and <a href="#code/src/main/scala/worker/Worker.scala" class="shortcut">Worker.scala</a>.
-Identify the corresponding log entries in the 3 terminal windows.
-
-Shutdown the worker node (third terminal window) with <code>ctrl-c</code>.
-Observe how the <code>"Consumed result"</code> logs in the frontend node (second terminal window)
-stops. Start the worker node again.
-
-```bash
-sbt "runMain worker.Main 0"
+[INFO] [07/21/2017 17:41:53.320] [ClusterSystem-akka.actor.default-dispatcher-16] [akka.tcp://ClusterSystem@127.0.0.1:51983/user/producer] Produced work: 3
+[INFO] [07/21/2017 17:41:53.322] [ClusterSystem-akka.actor.default-dispatcher-3] [akka.tcp://ClusterSystem@127.0.0.1:2551/user/master/singleton] Accepted work: 3bce4d6d-eaae-4da6-b316-0c6f566f2399
+[INFO] [07/21/2017 17:41:53.328] [ClusterSystem-akka.actor.default-dispatcher-3] [akka.tcp://ClusterSystem@127.0.0.1:2551/user/master/singleton] Giving worker 2b646020-6273-437c-aa0d-4aad6f12fb47 some work 3bce4d6d-eaae-4da6-b316-0c6f566f2399
+[INFO] [07/21/2017 17:41:53.328] [ClusterSystem-akka.actor.default-dispatcher-2] [akka.tcp://ClusterSystem@127.0.0.1:51980/user/worker] Got work: 3
+[INFO] [07/21/2017 17:41:53.328] [ClusterSystem-akka.actor.default-dispatcher-16] [akka.tcp://ClusterSystem@127.0.0.1:51980/user/worker] Work is complete. Result 3 * 3 = 9.
+[INFO] [07/21/2017 17:41:53.329] [ClusterSystem-akka.actor.default-dispatcher-19] [akka.tcp://ClusterSystem@127.0.0.1:2551/user/master/singleton] Work 3bce4d6d-eaae-4da6-b316-0c6f566f2399 is done by worker 2b646020-6273-437c-aa0d-4aad6f12fb47
 ```
+   
+Congratulations, you just ran your first Akka Cluster app. Now take a look at what happened under the covers. 
 
-You can also start more such worker nodes in new terminal windows.
+## What happens when you run it
 
-You can start more cluster backend nodes using port numbers between 2000-2999:
+When `Main` is run without any parameters, it starts six `ActorSystem`s in the same JVM. These six `ActorSystem`s form a single cluster. The six nodes include two each that perform front-end, back-end, and worker tasks:
 
-```bash
-sbt "runMain worker.Main 2552"
-```
+ * The front-end nodes simulate an external interface, such as a REST API, that accepts workloads from clients.
+ * The worker nodes have worker actors that accept and process workloads.
+ * The back-end nodes contain a Master actor that coordinates workloads, keeps track of the workers, and delegates work to available workers. One of the nodes is active and one is on standby. If the active Master goes down, the standby takes over.
 
-You can start more cluster frontend nodes using port numbers between 3000-3999:
+A bird's eye perspective of the architecture looks like this:
 
-```
-sbt "runMain worker.Main 3002"		
-```
+![Overview](images/cluster-nodes.png)
 
-Note that this sample runs the 
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/persistence.html#Shared_LevelDB_journal" target="_blank">shared LevelDB journal</a>
-on the node with port 2551. This is a single point of failure, and should not be used in production. 
-A real system would use a 
-<a href="http://akka.io/community/" target="_blank">distributed journal</a>.
+Let's look at the details of each part of the application, starting with the front-end.
 
-The files of the shared journal are saved in the target directory and when you restart
-the application the state is recovered. You can clean the state with:
+@@@index
 
-```bash
-sbt clean
-```
+* [The Front-end Nodes](front-end.md)
+* [The Back-end Nodes](back-end.md)
+* [The Master Actor in Detail](master-in-detail.md)
+* [The Worker Nodes](worker.md)
+* [Experimenting with the example](experimenting.md)
+* [Next Steps](next-steps.md)
 
-## Many Masters
-
-If the singleton master becomes a bottleneck we can start several master actors and
-shard the jobs among them. For each shard of master/standby nodes we use a separate
-cluster role name, e.g. "backend-shard1", "backend-shard2".
-Implementation of this is left as an exercise.
-
-## Next Steps
-
-In this example we have used
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-singleton.html"
-target="_blank">Cluster Singleton</a>,
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-client.html"
-target="_blank">Cluster Client</a> and
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/distributed-pub-sub.html"
-target="_blank">Distributed Publish Subscribe</a>.
-</p>
-
-More in depth documentation can be found in the
-<a href="http://doc.akka.io/docs/akka/2.4.0/common/cluster.html"
-target="_blank">Cluster Specification</a> and in the
-<a href="http://doc.akka.io/docs/akka/2.4.0/scala/cluster-usage.html"
-target="_blank">Cluster Usage</a> documentation.
+@@@

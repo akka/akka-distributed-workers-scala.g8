@@ -1,103 +1,114 @@
 package worker
 
-import scala.concurrent.duration._
-import com.typesafe.config.ConfigFactory
+import java.io.File
+import java.util.concurrent.CountDownLatch
+
 import akka.actor.ActorSystem
-import akka.actor.PoisonPill
-import akka.actor.Props
-import akka.actor.RootActorPath
-import akka.cluster.client.{ClusterClientReceptionist, ClusterClientSettings, ClusterClient}
-import akka.cluster.singleton.{ClusterSingletonManagerSettings, ClusterSingletonManager}
-import akka.japi.Util.immutableSeq
-import akka.actor.AddressFromURIString
-import akka.actor.ActorPath
-import akka.persistence.journal.leveldb.SharedLeveldbStore
-import akka.persistence.journal.leveldb.SharedLeveldbJournal
-import akka.util.Timeout
-import akka.pattern.ask
-import akka.actor.Identify
-import akka.actor.ActorIdentity
+import akka.persistence.cassandra.testkit.CassandraLauncher
+import com.typesafe.config.{Config, ConfigFactory}
 
 object Main {
 
+  // note that 2551 and 2552 are expected to be seed nodes though, even if
+  // the back-end starts at 2000
+  val backEndPortRange = 2000 to 2999
+
+  val frontEndPortRange = 3000 to 3999
+
   def main(args: Array[String]): Unit = {
-    if (args.isEmpty) {
-      startBackend(2551, "backend")
-      Thread.sleep(5000)
-      startBackend(2552, "backend")
-      startWorker(0)
-      Thread.sleep(5000)
-      startFrontend(0)
-    } else {
-      val port = args(0).toInt
-      if (2000 <= port && port <= 2999)
-        startBackend(port, "backend")
-      else if (3000 <= port && port <= 3999)
-        startFrontend(port)
-      else
-        startWorker(port)
-    }
+    args.headOption match {
 
-  }
+      case None =>
+        startClusterInSameJvm()
 
-  def workTimeout = 10.seconds
+      case Some(portString) if portString.matches("""\d+""") =>
+        val port = portString.toInt
+        if (backEndPortRange.contains(port)) startBackEnd(port)
+        else if (frontEndPortRange.contains(port)) startFrontEnd(port)
+        else startWorker(port, args.lift(1).map(_.toInt).getOrElse(1))
 
-  def startBackend(port: Int, role: String): Unit = {
-    val conf = ConfigFactory.parseString(s"akka.cluster.roles=[$role]").
-      withFallback(ConfigFactory.parseString("akka.remote.netty.tcp.port=" + port)).
-      withFallback(ConfigFactory.load())
-    val system = ActorSystem("ClusterSystem", conf)
+      case Some("cassandra") =>
+        startCassandraDatabase()
+        println("Started Cassandra, press Ctrl + C to kill")
+        new CountDownLatch(1).await()
 
-    startupSharedJournal(system, startStore = (port == 2551), path =
-      ActorPath.fromString("akka.tcp://ClusterSystem@127.0.0.1:2551/user/store"))
-
-    system.actorOf(
-      ClusterSingletonManager.props(
-        Master.props(workTimeout),
-        PoisonPill,
-        ClusterSingletonManagerSettings(system).withRole(role)
-      ),
-      "master")
-
-  }
-
-  def startFrontend(port: Int): Unit = {
-    val conf = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + port).
-      withFallback(ConfigFactory.load())
-    val system = ActorSystem("ClusterSystem", conf)
-    val frontend = system.actorOf(Props[Frontend], "frontend")
-    system.actorOf(Props(classOf[WorkProducer], frontend), "producer")
-    system.actorOf(Props[WorkResultConsumer], "consumer")
-  }
-
-  def startWorker(port: Int): Unit = {
-    // load worker.conf
-    val conf = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + port).
-      withFallback(ConfigFactory.load("worker"))
-    val system = ActorSystem("ClusterSystem", conf)
-
-    system.actorOf(Worker.props(Props[WorkExecutor]), "worker")
-  }
-
-  def startupSharedJournal(system: ActorSystem, startStore: Boolean, path: ActorPath): Unit = {
-    // Start the shared journal one one node (don't crash this SPOF)
-    // This will not be needed with a distributed journal
-    if (startStore)
-      system.actorOf(Props[SharedLeveldbStore], "store")
-    // register the shared journal
-    import system.dispatcher
-    implicit val timeout = Timeout(15.seconds)
-    val f = (system.actorSelection(path) ? Identify(None))
-    f.onSuccess {
-      case ActorIdentity(_, Some(ref)) => SharedLeveldbJournal.setStore(ref, system)
-      case _ =>
-        system.log.error("Shared journal not started at {}", path)
-        system.terminate()
-    }
-    f.onFailure {
-      case _ =>
-        system.log.error("Lookup of shared journal at {} timed out", path)
-        system.terminate()
     }
   }
+
+  def startClusterInSameJvm(): Unit = {
+    startCassandraDatabase()
+
+    // two backend nodes
+    startBackEnd(2551)
+    startBackEnd(2552)
+    // two front-end nodes
+    startFrontEnd(3000)
+    startFrontEnd(3001)
+    // two worker nodes with two worker actors each
+    startWorker(5001, 2)
+    startWorker(5002, 2)
+  }
+
+  /**
+   * Start a node with the role backend on the given port. (This may also
+   * start the shared journal, see below for details)
+   */
+  def startBackEnd(port: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "back-end"))
+    MasterSingleton.startSingleton(system)
+  }
+
+  /**
+   * Start a front end node that will submit work to the backend nodes
+   */
+  // #front-end
+  def startFrontEnd(port: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "front-end"))
+    system.actorOf(FrontEnd.props, "front-end")
+    system.actorOf(WorkResultConsumer.props, "consumer")
+  }
+  // #front-end
+
+  /**
+   * Start a worker node, with n actual workers that will accept and process workloads
+   */
+  // #worker
+  def startWorker(port: Int, workers: Int): Unit = {
+    val system = ActorSystem("ClusterSystem", config(port, "worker"))
+    val masterProxy = system.actorOf(
+      MasterSingleton.proxyProps(system),
+      name = "masterProxy")
+
+    (1 to workers).foreach(n =>
+      system.actorOf(Worker.props(masterProxy), s"worker-$n")
+    )
+  }
+  // #worker
+
+  def config(port: Int, role: String): Config =
+    ConfigFactory.parseString(s"""
+      akka.remote.netty.tcp.port=$port
+      akka.cluster.roles=[$role]
+    """).withFallback(ConfigFactory.load())
+
+  /**
+   * To make the sample easier to run we kickstart a Cassandra instance to
+   * act as the journal. Cassandra is a great choice of backend for Akka Persistence but
+   * in a real application a pre-existing Cassandra cluster should be used.
+   */
+  def startCassandraDatabase(): Unit = {
+    val databaseDirectory = new File("target/cassandra-db")
+    CassandraLauncher.start(
+      databaseDirectory,
+      CassandraLauncher.DefaultTestConfigResource,
+      clean = false,
+      port = 9042
+    )
+
+    // shut the cassandra instance down when the JVM stops
+    sys.addShutdownHook {
+      CassandraLauncher.stop()
+    }
+  }
+
 }

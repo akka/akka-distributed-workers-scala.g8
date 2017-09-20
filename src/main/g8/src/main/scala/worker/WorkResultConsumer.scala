@@ -1,10 +1,14 @@
 package worker
 
-import akka.actor.Actor
-import akka.actor.ActorLogging
+import akka.actor.{Actor, ActorLogging, Props}
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator
 
+object WorkResultConsumer {
+  def props: Props = Props(new WorkResultConsumer)
+}
+
+// #work-result-consumer
 class WorkResultConsumer extends Actor with ActorLogging {
 
   val mediator = DistributedPubSub(context.system).mediator
@@ -17,3 +21,4 @@ class WorkResultConsumer extends Actor with ActorLogging {
   }
 
 }
+// #work-result-consumer
