@@ -14,7 +14,7 @@ Now, let's take a look at the code that accomplishes this front-end behavior.
 
 ## The Front-end Actor
 
-@@snip [FrontEnd.scala]($g8src$/scala/worker/Frontend.scala) { #front-end }
+@@snip [FrontEnd.scala]($g8src$/scala/worker/FrontEnd.scala) { #front-end }
 
 Note in the source code that as the 'FrontEnd' actor starts up, it:
 
