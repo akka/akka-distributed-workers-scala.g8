@@ -27,7 +27,7 @@ object Master {
 
 }
 
-class Master(workTimeout: FiniteDuration) extends PersistentActor with Timers with ActorLogging {
+class Master(workTimeout: FiniteDuration) extends Timers with PersistentActor with ActorLogging {
   import Master._
   import WorkState._
   import context.dispatcher
