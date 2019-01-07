@@ -26,7 +26,7 @@ The Akka Distributed Workers example for Scala is a zipped project that includes
 
 Download and unzip the example:
 
-1. Download the zip file from [Lightbend Tech Hub](http://dev.lightbend.com/start/?group=akka&project=akka-distributed-workers-scala) by clicking `CREATE A PROJECT FOR ME`. 
+1. Download the zip file from [Lightbend Tech Hub](https://developer.lightbend.com/start/?group=akka&project=akka-distributed-workers-scala) by clicking `CREATE A PROJECT FOR ME`. 
 1. Extract the zip file to a convenient location: 
   - On Linux and MacOS systems, open a terminal and use the command `unzip akka-distributed-workers-scala.zip`. Note: On MacOS, if you unzip using Archiver, you also have to make the sbt files executable:
 ```
