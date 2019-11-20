@@ -87,7 +87,7 @@ object Main {
 
   def config(port: Int, role: String): Config =
     ConfigFactory.parseString(s"""
-      akka.remote.netty.tcp.port=$port
+      akka.remote.artery.canonical.port=$port
       akka.cluster.roles=[$role]
     """).withFallback(ConfigFactory.load())
 
