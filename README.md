@@ -1,7 +1,7 @@
 # Akka Distributed Workers Quickstart
 
 ## Quickstart guide
-This example is described in the TODO-techhub-link
+This example is described in the [Lightbend Tech Hub](https://developer.lightbend.com/guides/akka-distributed-workers-scala/)
 
 The Distributed Workers example illustrates building a distributed system in Scala using Akka Cluster. 
 Within 30 minutes, you should be able to download and run the example and use this guide 

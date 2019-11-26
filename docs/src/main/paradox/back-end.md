@@ -10,17 +10,16 @@ In case of the master node crashing and being removed from the cluster another m
 
 ![Managed Singleton](images/singleton-manager.png)
 
-You can see how the master singleton is started in the method `startSingleton`
+You can see how the master singleton is started in the method `init`
 in `MasterSingleton`:
 
 @@snip [MasterSingleton.scala]($g8src$/scala/worker/MasterSingleton.scala) { #singleton }
 
-The singleton accepts the `Prop`s of the actual singleton actor, as well as configuration which allows us to decide that the singleton actors should only run on the nodes with the role `back-end`.
+The singleton accepts the `Behavior` of the actual singleton actor, as well as configuration 
+which allows us to decide that the singleton actors should only run on the nodes with the role `back-end`.
 
-The proxy is similarly configured, with the role where the singleton will be running, and also a path where the singleton manager actor can be found:
-
-@@snip [MasterSingleton.scala]($g8src$/scala/worker/MasterSingleton.scala) { #proxy }
-
+Calls to `init` on nodes without the `back-end` role will result in a proxy to communicate with the singleton
+being created.
 
 The state of the master is recovered on the standby node in the case of the node being lost through event sourcing.
 

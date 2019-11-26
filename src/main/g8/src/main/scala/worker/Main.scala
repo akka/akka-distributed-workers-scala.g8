@@ -54,17 +54,24 @@ object Main {
     ActorSystem[Nothing](
       Behaviors.setup[Nothing](ctx => {
         val cluster = Cluster(ctx.system)
+        //#back-end
         if (cluster.selfMember.hasRole("back-end")) {
           MasterSingleton.init(ctx.system)
-        } else if (cluster.selfMember.hasRole("front-end")) {
+        }
+        //#back-end
+        //#front-end
+        if (cluster.selfMember.hasRole("front-end")) {
           ctx.spawn(FrontEnd(), "front-end")
           ctx.spawn(WorkResultConsumer(), "consumer")
-        } else if (cluster.selfMember.hasRole("worker")) {
-
+        }
+        //#front-end
+        //#worker
+        if (cluster.selfMember.hasRole("worker")) {
           val masterProxy = MasterSingleton.init(ctx.system)
           (1 to workers)
             .foreach(n => ctx.spawn(Worker(masterProxy), s"worker-$n"))
         }
+        //#worker
         Behaviors.empty
       }),
       "ClusterSystem",

@@ -106,6 +106,7 @@ object Master {
                 }
               // #persisting
 
+              // #pruning
               case Cleanup =>
                 var events = ListBuffer.empty[WorkDomainEvent]
                 workers.foreach {
@@ -124,6 +125,7 @@ object Master {
 
                   case _ => // this one is a keeper!
                 }
+                // #pruning
 
                 if (events.nonEmpty) {
                   Effect
@@ -242,7 +244,9 @@ object Master {
                 }
             }
           },
+          //#event-handler
           eventHandler = (workState, event) => workState.updated(event)
+          //#event-handler
         )
       }
     }

@@ -2,12 +2,6 @@
 
 The following are some ideas where to take this sample next. Implementation of each idea is left up to you.
 
-## Using a different serializer
-
-To simplify things in this sample the default Java Serializer was used but in a real application it should not be used. For passing messages across the network the Java Serialization has serious security implications (worst case ability to remotely execute code) and does not have good performance characteristics. For storing the domain events in a persistent journal, there is also the problem with how to deal with versioning, which is hard if not impossible using Java Serialization.
-
-A few options to look into are listed in the [Akka Docs section on Serialization](http://doc.akka.io/docs/akka/current/scala/serialization.html#external-akka-serializers)
-
 ## A HTTP Based API
 
 The `FrontEnd` in this sample is a dummy that automatically generates work. A real application could for example use [Akka HTTP](http://doc.akka.io/docs/akka-http/current/scala/http/introduction.html) to provide a HTTP REST (or other) API for external clients.

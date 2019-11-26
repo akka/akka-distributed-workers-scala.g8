@@ -35,7 +35,8 @@ object FrontEnd {
   def idle(workCounter: Int,
            masterProxy: ActorRef[SubmitWork]): Behavior[Command] =
     Behaviors.withTimers { timer =>
-      timer.startSingleTimer("tick", Tick, 5.seconds)
+      val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
+      timer.startSingleTimer("tick", Tick, nextTick)
       Behaviors.receiveMessage {
         case Tick =>
           busy(workCounter + 1, Work(nextWorkId(), workCounter), masterProxy)
@@ -51,10 +52,7 @@ object FrontEnd {
       Behaviors.setup { ctx =>
         def sendWork(work: Work): Unit = {
           implicit val timeout: Timeout = Timeout(5.seconds)
-          ctx.ask[SubmitWork, Master.Ack](
-            masterProxy,
-            reply => SubmitWork(work, reply)
-          ) {
+          ctx.ask[SubmitWork, Master.Ack](masterProxy, reply => SubmitWork(work, reply)) {
             case Success(_) => WorkAccepted
             case Failure(_) => Failed
           }
@@ -64,16 +62,11 @@ object FrontEnd {
 
         Behaviors.receiveMessage {
           case Failed =>
-            ctx.log.info(
-              "Work {} not accepted, retry after a while",
-              workInProgress.workId
-            )
+            ctx.log.info("Work {} not accepted, retry after a while", workInProgress.workId)
             timers.startSingleTimer("retry", Retry, 3.seconds)
             Behaviors.same
           case WorkAccepted =>
             ctx.log.info("Got ack for workId {}", workInProgress.workId)
-            val nextTick = ThreadLocalRandom.current.nextInt(3, 10).seconds
-            timers.startSingleTimer(s"tick", Tick, nextTick)
             idle(workCounter, masterProxy)
           case Retry =>
             ctx.log.info("Retrying work {}", workInProgress.workId)

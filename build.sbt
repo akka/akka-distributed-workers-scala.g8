@@ -8,7 +8,14 @@ lazy val root = (project in file("."))
     test in Test := {
       val _ = (g8Test in Test).toTask("").value
     },
-    scriptedLaunchOpts ++= List("-Xms1024m", "-Xmx1024m", "-XX:ReservedCodeCacheSize=128m", "-XX:MaxPermSize=256m", "-Xss2m", "-Dfile.encoding=UTF-8")
+    scriptedLaunchOpts ++= List(
+      "-Xms1024m",
+      "-Xmx1024m",
+      "-XX:ReservedCodeCacheSize=128m",
+      "-XX:MaxPermSize=256m",
+      "-Xss2m",
+      "-Dfile.encoding=UTF-8"
+    )
   )
 
 // Documentation for this project:
@@ -17,4 +24,7 @@ lazy val root = (project in file("."))
 lazy val docs = (project in file("docs"))
   .enablePlugins(ParadoxPlugin)
 
-resolvers in ThisBuild += Resolver.url("typesafe", url("http://repo.typesafe.com/typesafe/ivy-releases/"))(Resolver.ivyStylePatterns)
+resolvers in ThisBuild += Resolver.url(
+  "typesafe",
+  url("https://repo.typesafe.com/typesafe/ivy-releases/")
+)(Resolver.ivyStylePatterns)

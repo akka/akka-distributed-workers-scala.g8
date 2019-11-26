@@ -1,6 +1,10 @@
 # Front-End Nodes
 
-Typically in systems built with Akka, clients submit requests using a RESTful API. Either [Akka HTTP](http://doc.akka.io/docs/akka-http/current/scala/http/introduction.html) or [Play Framework](https://www.playframework.com) are great choices for implementing an HTTP API for the front-end. 
+Typically in systems built with Akka, clients submit requests using a RESTful API or a gRPC API. 
+Either [Akka HTTP](http://doc.akka.io/docs/akka-http/current/scala/http/introduction.html) or [Play Framework](https://www.playframework.com) 
+are great choices for implementing an HTTP API for the front-end, [Akka
+gRPC](https://doc.akka.io/docs/akka-grpc/current/index.html) can be used of a gRPC front end is preferred.
+
 To limit the scope of this example, we have chosen to emulate client activity with two ordinary actors:
 
 * The `FrontEnd` actor generates payloads at random intervals and sends them to the 'Master' actor.
@@ -22,9 +26,9 @@ Note in the source code that as the 'FrontEnd' actor starts up, it:
 
 1. Schedules 'Tick' messages to itself.
 1. Each 'Tick' message:
-   1. Triggers creation of a new 'Work' message.
-   1. Switches to a new 'busy' behavior.
-   1. Sends the 'Work' message to the 'Master' actor of a 'back-end' node.
+    1. Triggers creation of a new 'Work' message.
+    1. Switches to a new 'busy' behavior.
+    1. Sends the 'Work' message to the 'Master' actor of a 'back-end' node.
 
 As you can see the `FrontEnd` actor schedules `Tick` messages to itself when starting up. the `Tick` message then triggers creation of a new `Work`, sending the work to the `Master` actor on a `back-end` node and switching to a new `busy` behavior.
 
@@ -34,16 +38,15 @@ The 'Master' actor can accept or deny a work request and we need to deal with un
 
 * If the 'Master' accepts the request, the actor schedules a new tick to itself and toggles back to the idle behavior.
 * To deal with failures, the message uses the [ask pattern](http://doc.akka.io/docs/akka/current/scala/actors.html#ask-send-and-receive-future) to add a timeout to wait for a reply. If the timeout expires before the master responds, the returned 'Future' fails with an akka.pattern.AskTimeoutException.
-* We transform timeouts or denials from the 'Master' into a 'NotOK' value. The 'Future' is piped to the 'FrontEnd' actor as a message with the completed value, either the successful result, or 'NotOK'. If the work is not accepted or there is no response, for example if the message or response got lost, the FrontEnd actor backs off a bit and then sends the work again.
+* We transform timeouts or denials from the 'Master' into a 'Failed' value that is automatically piped back to `self` and a `Retry` is scheduled.
 
-
-The future is then `pipe`d to the actor itself, meaning that when it completes the value it is completed with is sent to the actor as a message.
-
-When a workload has been acknowledged by the master, the actor schedules a new tick to itself and toggles back to the `idle` behavior.  
+When a workload has been acknowledged by the master, the actor goes back to the  `idle` behavior which schedules
+a `Tick` to start the process again.  
 
 If the work is not accepted or there is no response, for example if the message or response got lost, the `FrontEnd` actor backs off a bit and then sends the work again.
 
-You can see the how the actors on a front-end node is started in the method `Main.startFrontEnd`:
+You can see the how the actors on a front-end node is started in the method `Main.start` when the node
+contains the `front-end` role:
 
 @@snip [Main.scala]($g8src$/scala/worker/Main.scala) { #front-end }
 
