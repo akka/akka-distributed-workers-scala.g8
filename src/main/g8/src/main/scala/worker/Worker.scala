@@ -2,95 +2,178 @@ package worker
 
 import java.util.UUID
 
-import akka.actor.SupervisorStrategy.{Restart, Stop}
-import akka.actor._
+import akka.actor.typed._
+import akka.actor.typed.scaladsl._
+import worker.Master.WorkerRequestsWork
+import worker.WorkExecutor.DoWork
+import worker.Worker.Ack
+import worker.Worker.Register
+import worker.Worker.SubmitWork
+import worker.Worker.WorkIsReady
+import worker.Worker.WorkTimeout
 
 import scala.concurrent.duration._
 
-/**
- * The worker is actually more of a middle manager, delegating the actual work
- * to the WorkExecutor, supervising it and keeping itself available to interact with the work master.
- */
-object Worker {
+class Worker private (workerId: String,
+                      masterProxy: ActorRef[Master.Command],
+                      ctx: ActorContext[Worker.Command],
+                      timers: TimerScheduler[Worker.Command],
+                      workExecutorFactory: () => Behavior[DoWork]) {
+  private val registerInterval = ctx.system.settings.config
+    .getDuration("distributed-workers.worker-registration-interval")
+    .toNanos
+    .nano
 
-  def props(masterProxy: ActorRef): Props = Props(new Worker(masterProxy))
+  private val workAckTimeout = ctx.system.settings.config
+    .getDuration("distributed-workers.work-ack-timeout")
+    .toNanos
+    .nano
+
+  timers.startTimerWithFixedDelay("register", Register, registerInterval)
+
+  def createWorkExecutor(): ActorRef[DoWork] = {
+    val supervised = Behaviors
+      .supervise(workExecutorFactory())
+      .onFailure[Exception](SupervisorStrategy.stop)
+    val ref = ctx.spawn(supervised, "work-executor")
+    ctx.watch(ref)
+    ref
+  }
+
+  def deregisterOnStop()
+    : PartialFunction[(scaladsl.ActorContext[Worker.Command], Signal), Behavior[
+      Worker.Command
+    ]] = {
+    case (_, PostStop) =>
+      ctx.log.info("Worker has stopped, de-registering")
+      masterProxy ! Master.DeRegisterWorker(workerId)
+      Behaviors.same
+  }
+
+  def reportWorkFailedOnRestart(
+    workId: String
+  ): PartialFunction[(scaladsl.ActorContext[Worker.Command], Signal), Behavior[
+    Worker.Command
+  ]] = {
+    case (_, Terminated(_)) =>
+      ctx.log.info("Work executor terminated. Reporting failure")
+      masterProxy ! Master.WorkFailed(workerId, workId)
+      // need to re-create the work executor
+      idle(createWorkExecutor())
+  }
+
+  def idle(
+    workExecutor: ActorRef[DoWork] = createWorkExecutor()
+  ): Behavior[Worker.Command] =
+    Behaviors.setup[Worker.Command] { ctx =>
+      Behaviors.receiveMessagePartial[Worker.Command] {
+        case Register =>
+          masterProxy ! Master.RegisterWorker(workerId, ctx.self)
+          Behaviors.same
+        case WorkIsReady =>
+          // this is the only state where we reply to WorkIsReady
+          masterProxy ! WorkerRequestsWork(
+            workerId,
+            ctx.self.narrow[SubmitWork]
+          )
+          Behaviors.same
+
+        case SubmitWork(Work(workId, job: Int)) =>
+          ctx.log.info("Got work: {}", job)
+          workExecutor ! WorkExecutor.DoWork(job, ctx.self)
+          working(workId, workExecutor)
+
+        case Ack(_) =>
+          Behaviors.same
+
+      } receiveSignal deregisterOnStop()
+    }
+
+  def working(workId: String,
+              workExecutor: ActorRef[DoWork]): Behavior[Worker.Command] =
+    Behaviors.setup { ctx =>
+      Behaviors.receiveMessagePartial[Worker.Command] {
+        case Worker.WorkComplete(result) =>
+          ctx.log.info("Work is complete. Result {}.", result)
+          masterProxy ! Master
+            .WorkIsDone(workerId, workId, result, ctx.self.narrow[Worker.Ack])
+          ctx.setReceiveTimeout(workAckTimeout, WorkTimeout)
+          waitForWorkIsDoneAck(result, workId, workExecutor)
+
+        case _: SubmitWork =>
+          ctx.log.warn(
+            "Yikes. Master told me to do work, while I'm already working."
+          )
+          Behaviors.unhandled
+
+        case Register =>
+          masterProxy ! Master.RegisterWorker(workerId, ctx.self)
+          Behaviors.same
+      } receiveSignal (deregisterOnStop()
+        .orElse(reportWorkFailedOnRestart(workId)))
+    }
+
+  def waitForWorkIsDoneAck(
+    result: String,
+    workId: String,
+    workExecutor: ActorRef[DoWork]
+  ): Behavior[Worker.Command] =
+    Behaviors.setup { ctx =>
+      Behaviors.receiveMessage[Worker.Command] {
+        case WorkTimeout =>
+          ctx.log.info("No ack from master, resending work result")
+          masterProxy ! Master
+            .WorkIsDone(workerId, workId, result, ctx.self.narrow[Ack])
+          Behaviors.same
+        case Ack(id) if id == workId =>
+          ctx.log.info("Work acked")
+          masterProxy ! WorkerRequestsWork(
+            workerId,
+            ctx.self.narrow[SubmitWork]
+          )
+          ctx.cancelReceiveTimeout()
+          idle(workExecutor)
+
+        case Register =>
+          masterProxy ! Master.RegisterWorker(workerId, ctx.self)
+          Behaviors.same
+      } receiveSignal (deregisterOnStop()
+        .orElse(reportWorkFailedOnRestart(workId)))
+
+    }
 
 }
 
-class Worker(masterProxy: ActorRef)
-  extends Actor with Timers with ActorLogging {
-  import MasterWorkerProtocol._
-  import context.dispatcher
+/**
+  * The worker is actually more of a middle manager, delegating the actual work
+  * to the WorkExecutor, supervising it and keeping itself available to interact with the work master.
+  */
+object Worker {
 
+  sealed trait Command extends CborSerializable
+  case object WorkIsReady extends Command
+  case class Ack(id: String) extends Command
+  case class SubmitWork(work: Work) extends Command
+  case class WorkComplete(result: String) extends Command
 
-  val workerId = UUID.randomUUID().toString
-  val registerInterval = context.system.settings.config.getDuration("distributed-workers.worker-registration-interval").getSeconds.seconds
+  private case object Register extends Command
+  private case object WorkTimeout extends Command
 
-  val registerTask = context.system.scheduler.schedule(0.seconds, registerInterval, masterProxy, RegisterWorker(workerId))
+  def apply(
+             masterProxy: ActorRef[Master.Command],
+             workerId: String = UUID.randomUUID().toString,
+             workExecutorFactory: () => Behavior[DoWork] = () => WorkExecutor()
+  ): Behavior[Command] = Behaviors.setup[Command] { ctx =>
+    Behaviors.withTimers { timers: TimerScheduler[Command] =>
+      masterProxy ! Master.RegisterWorker(workerId, ctx.self)
 
-  val workExecutor = createWorkExecutor()
-
-  var currentWorkId: Option[String] = None
-  def workId: String = currentWorkId match {
-    case Some(workId) => workId
-    case None         => throw new IllegalStateException("Not working")
-  }
-
-  def receive = idle
-
-  def idle: Receive = {
-    case WorkIsReady =>
-      // this is the only state where we reply to WorkIsReady
-      masterProxy ! WorkerRequestsWork(workerId)
-
-    case Work(workId, job: Int) =>
-      log.info("Got work: {}", job)
-      currentWorkId = Some(workId)
-      workExecutor ! WorkExecutor.DoWork(job)
-      context.become(working)
-
-  }
-
-  def working: Receive = {
-    case WorkExecutor.WorkComplete(result) =>
-      log.info("Work is complete. Result {}.", result)
-      masterProxy ! WorkIsDone(workerId, workId, result)
-      context.setReceiveTimeout(5.seconds)
-      context.become(waitForWorkIsDoneAck(result))
-
-    case _: Work =>
-      log.warning("Yikes. Master told me to do work, while I'm already working.")
-
-  }
-
-  def waitForWorkIsDoneAck(result: Any): Receive = {
-    case Ack(id) if id == workId =>
-      masterProxy ! WorkerRequestsWork(workerId)
-      context.setReceiveTimeout(Duration.Undefined)
-      context.become(idle)
-
-    case ReceiveTimeout =>
-      log.info("No ack from master, resending work result")
-      masterProxy ! WorkIsDone(workerId, workId, result)
-
-  }
-
-  def createWorkExecutor(): ActorRef =
-    // in addition to starting the actor we also watch it, so that
-    // if it stops this worker will also be stopped
-    context.watch(context.actorOf(WorkExecutor.props, "work-executor"))
-
-  override def supervisorStrategy = OneForOneStrategy() {
-    case _: ActorInitializationException => Stop
-    case _: Exception =>
-      currentWorkId foreach { workId => masterProxy ! WorkFailed(workerId, workId) }
-      context.become(idle)
-      Restart
-  }
-
-  override def postStop(): Unit = {
-    registerTask.cancel()
-    masterProxy ! DeRegisterWorker(workerId)
+      Behaviors
+        .supervise(
+          new Worker(workerId, masterProxy, ctx, timers, workExecutorFactory)
+            .idle()
+        )
+        .onFailure[Exception](SupervisorStrategy.restart)
+    }
   }
 
 }

@@ -1,12 +1,14 @@
 # Front-End Nodes
 
-Typically in systems built with Akka, clients submit requests using a RESTful API. Either [Akka HTTP](http://doc.akka.io/docs/akka-http/current/scala/http/introduction.html) or [Play Framework](https://www.playframework.com) are great choices for implementing an HTTP API for the front-end. To limit the scope of this example, we have chosen to emulate client activity with two ordinary actors:
+Typically in systems built with Akka, clients submit requests using a RESTful API. Either [Akka HTTP](http://doc.akka.io/docs/akka-http/current/scala/http/introduction.html) or [Play Framework](https://www.playframework.com) are great choices for implementing an HTTP API for the front-end. 
+To limit the scope of this example, we have chosen to emulate client activity with two ordinary actors:
 
 * The `FrontEnd` actor generates payloads at random intervals and sends them to the 'Master' actor.
 * The `WorkResultConsumerActor` that consumes results and logs them.
 
 
-The `FrontEnd` actor only concerns itself with posting workloads, and does not care when the work has been completed. When a workload has been processed successfully and passed to the `Master` actor it publishes the result to all interested cluster nodes through Distributed Pub-Sub. 
+The `FrontEnd` actor only concerns itself with posting workloads, and does not care when the work has been completed. 
+When a workload has been processed successfully and passed to the `Master` actor it publishes the result to all interested cluster nodes through Distributed Pub-Sub. 
 
 The `WorkResultConsumerActor` subscribes to the completion events and logs when a workload has completed.
 
@@ -21,12 +23,12 @@ Note in the source code that as the 'FrontEnd' actor starts up, it:
 1. Schedules 'Tick' messages to itself.
 1. Each 'Tick' message:
    1. Triggers creation of a new 'Work' message.
-   1. Sends the 'Work' message to the 'Master' actor of a 'back-end' node.
    1. Switches to a new 'busy' behavior.
+   1. Sends the 'Work' message to the 'Master' actor of a 'back-end' node.
 
 As you can see the `FrontEnd` actor schedules `Tick` messages to itself when starting up. the `Tick` message then triggers creation of a new `Work`, sending the work to the `Master` actor on a `back-end` node and switching to a new `busy` behavior.
 
-The cluster contains one `Master` actor. The `FrontEnd` actor does not need to know the exact location because it sends work to the master using the `ClusterSingletonProxy`.
+The cluster contains one `Master` actor. The `FrontEnd` actor does not need to know the exact location because it sends work to the `masterProxy` that is a cluster singleton proxy.
 
 The 'Master' actor can accept or deny a work request and we need to deal with unexpected errors:
 

@@ -3,7 +3,9 @@ package worker
 import java.io.File
 import java.util.concurrent.CountDownLatch
 
-import akka.actor.ActorSystem
+import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.Behaviors
+import akka.cluster.typed.Cluster
 import akka.persistence.cassandra.testkit.CassandraLauncher
 import com.typesafe.config.{Config, ConfigFactory}
 
@@ -23,9 +25,9 @@ object Main {
 
       case Some(portString) if portString.matches("""\d+""") =>
         val port = portString.toInt
-        if (backEndPortRange.contains(port)) startBackEnd(port)
-        else if (frontEndPortRange.contains(port)) startFrontEnd(port)
-        else startWorker(port, args.lift(1).map(_.toInt).getOrElse(1))
+        if (backEndPortRange.contains(port)) start(port, "back-end")
+        else if (frontEndPortRange.contains(port)) start(port, "front-end")
+        else start(port, "worker", args.lift(1).map(_.toInt).getOrElse(1))
 
       case Some("cassandra") =>
         startCassandraDatabase()
@@ -37,65 +39,50 @@ object Main {
 
   def startClusterInSameJvm(): Unit = {
     startCassandraDatabase()
-
     // two backend nodes
-    startBackEnd(2551)
-    startBackEnd(2552)
+    start(2551, "back-end")
+    start(2552, "back-end")
     // two front-end nodes
-    startFrontEnd(3000)
-    startFrontEnd(3001)
+    start(3000, "front-end")
+    start(3001, "front-end")
     // two worker nodes with two worker actors each
-    startWorker(5001, 2)
-    startWorker(5002, 2)
+    start(5001, "worker", 2)
+    start(5002, "worker", 2)
   }
 
-  /**
-   * Start a node with the role backend on the given port. (This may also
-   * start the shared journal, see below for details)
-   */
-  def startBackEnd(port: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", config(port, "back-end"))
-    MasterSingleton.startSingleton(system)
-  }
+  def start(port: Int, role: String, workers: Int = 2): Unit = {
+    ActorSystem[Nothing](
+      Behaviors.setup[Nothing](ctx => {
+        val cluster = Cluster(ctx.system)
+        if (cluster.selfMember.hasRole("back-end")) {
+          MasterSingleton.init(ctx.system)
+        } else if (cluster.selfMember.hasRole("front-end")) {
+          ctx.spawn(FrontEnd(), "front-end")
+          ctx.spawn(WorkResultConsumer(), "consumer")
+        } else if (cluster.selfMember.hasRole("worker")) {
 
-  /**
-   * Start a front end node that will submit work to the backend nodes
-   */
-  // #front-end
-  def startFrontEnd(port: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", config(port, "front-end"))
-    system.actorOf(FrontEnd.props, "front-end")
-    system.actorOf(WorkResultConsumer.props, "consumer")
-  }
-  // #front-end
-
-  /**
-   * Start a worker node, with n actual workers that will accept and process workloads
-   */
-  // #worker
-  def startWorker(port: Int, workers: Int): Unit = {
-    val system = ActorSystem("ClusterSystem", config(port, "worker"))
-    val masterProxy = system.actorOf(
-      MasterSingleton.proxyProps(system),
-      name = "masterProxy")
-
-    (1 to workers).foreach(n =>
-      system.actorOf(Worker.props(masterProxy), s"worker-$n")
+          val masterProxy = MasterSingleton.init(ctx.system)
+          (1 to workers)
+            .foreach(n => ctx.spawn(Worker(masterProxy), s"worker-$n"))
+        }
+        Behaviors.empty
+      }),
+      "ClusterSystem",
+      config(port, role)
     )
   }
-  // #worker
 
   def config(port: Int, role: String): Config =
     ConfigFactory.parseString(s"""
-      akka.remote.netty.tcp.port=$port
+      akka.remote.artery.canonical.port=$port
       akka.cluster.roles=[$role]
     """).withFallback(ConfigFactory.load())
 
   /**
-   * To make the sample easier to run we kickstart a Cassandra instance to
-   * act as the journal. Cassandra is a great choice of backend for Akka Persistence but
-   * in a real application a pre-existing Cassandra cluster should be used.
-   */
+    * To make the sample easier to run we kickstart a Cassandra instance to
+    * act as the journal. Cassandra is a great choice of backend for Akka Persistence but
+    * in a real application a pre-existing Cassandra cluster should be used.
+    */
   def startCassandraDatabase(): Unit = {
     val databaseDirectory = new File("target/cassandra-db")
     CassandraLauncher.start(

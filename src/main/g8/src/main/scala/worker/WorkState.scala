@@ -4,13 +4,15 @@ import scala.collection.immutable.Queue
 
 object WorkState {
 
-  def empty: WorkState = WorkState(
-    pendingWork = Queue.empty,
-    workInProgress = Map.empty,
-    acceptedWorkIds = Set.empty,
-    doneWorkIds = Set.empty)
+  def empty: WorkState =
+    WorkState(
+      pendingWork = Queue.empty,
+      workInProgress = Map.empty,
+      acceptedWorkIds = Set.empty,
+      doneWorkIds = Set.empty
+    )
 
-  trait WorkDomainEvent
+  trait WorkDomainEvent extends CborSerializable
   // #events
   case class WorkAccepted(work: Work) extends WorkDomainEvent
   case class WorkStarted(workId: String) extends WorkDomainEvent
@@ -20,11 +22,10 @@ object WorkState {
   // #events
 }
 
-case class WorkState private (
-  private val pendingWork: Queue[Work],
-  private val workInProgress: Map[String, Work],
-  private val acceptedWorkIds: Set[String],
-  private val doneWorkIds: Set[String]) {
+case class WorkState private (private val pendingWork: Queue[Work],
+                              private val workInProgress: Map[String, Work],
+                              private val acceptedWorkIds: Set[String],
+                              private val doneWorkIds: Set[String]) {
 
   import WorkState._
 
@@ -38,29 +39,37 @@ case class WorkState private (
     case WorkAccepted(work) ⇒
       copy(
         pendingWork = pendingWork enqueue work,
-        acceptedWorkIds = acceptedWorkIds + work.workId)
+        acceptedWorkIds = acceptedWorkIds + work.workId
+      )
 
     case WorkStarted(workId) ⇒
       val (work, rest) = pendingWork.dequeue
-      require(workId == work.workId, s"WorkStarted expected workId $workId == ${work.workId}")
+      require(
+        workId == work.workId,
+        s"WorkStarted expected workId $workId == ${work.workId}"
+      )
       copy(
         pendingWork = rest,
-        workInProgress = workInProgress + (workId -> work))
+        workInProgress = workInProgress + (workId -> work)
+      )
 
     case WorkCompleted(workId, result) ⇒
       copy(
         workInProgress = workInProgress - workId,
-        doneWorkIds = doneWorkIds + workId)
+        doneWorkIds = doneWorkIds + workId
+      )
 
     case WorkerFailed(workId) ⇒
       copy(
         pendingWork = pendingWork enqueue workInProgress(workId),
-        workInProgress = workInProgress - workId)
+        workInProgress = workInProgress - workId
+      )
 
     case WorkerTimedOut(workId) ⇒
       copy(
         pendingWork = pendingWork enqueue workInProgress(workId),
-        workInProgress = workInProgress - workId)
+        workInProgress = workInProgress - workId
+      )
   }
 
 }

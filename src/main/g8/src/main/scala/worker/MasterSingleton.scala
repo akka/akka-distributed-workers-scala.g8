@@ -1,9 +1,12 @@
 package worker
 
-import akka.actor.{ActorSystem, PoisonPill}
-import akka.cluster.singleton._
+import akka.actor.typed.ActorRef
+import akka.actor.typed.ActorSystem
+import akka.cluster.typed.ClusterSingleton
 
 import scala.concurrent.duration._
+import akka.cluster.typed._
+import worker.Master.Command
 
 object MasterSingleton {
 
@@ -11,22 +14,19 @@ object MasterSingleton {
   private val singletonRole = "back-end"
 
   // #singleton
-  def startSingleton(system: ActorSystem) = {
-    val workTimeout = system.settings.config.getDuration("distributed-workers.work-timeout").getSeconds.seconds
+  def init(system: ActorSystem[_]): ActorRef[Command] = {
+    val workTimeout = system.settings.config
+      .getDuration("distributed-workers.work-timeout")
+      .getSeconds
+      .seconds
 
-    system.actorOf(
-      ClusterSingletonManager.props(
-        Master.props(workTimeout),
-        PoisonPill,
-        ClusterSingletonManagerSettings(system).withRole(singletonRole)
-      ),
-      singletonName)
+    ClusterSingleton(system)
+      .init(
+        SingletonActor(Master(workTimeout), singletonName)
+          .withSettings(
+            ClusterSingletonSettings(system).withRole(singletonRole)
+          )
+      )
   }
   // #singleton
-
-  // #proxy
-  def proxyProps(system: ActorSystem) = ClusterSingletonProxy.props(
-    settings = ClusterSingletonProxySettings(system).withRole(singletonRole),
-    singletonManagerPath = s"/user/$singletonName")
-  // #proxy
 }

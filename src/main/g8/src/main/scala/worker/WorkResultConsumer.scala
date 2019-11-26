@@ -1,24 +1,30 @@
 package worker
 
-import akka.actor.{Actor, ActorLogging, Props}
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.Behaviors
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator
-
-object WorkResultConsumer {
-  def props: Props = Props(new WorkResultConsumer)
-}
+import akka.actor.typed.scaladsl.adapter._
 
 // #work-result-consumer
-class WorkResultConsumer extends Actor with ActorLogging {
-
-  val mediator = DistributedPubSub(context.system).mediator
-  mediator ! DistributedPubSubMediator.Subscribe(Master.ResultsTopic, self)
-
-  def receive = {
-    case _: DistributedPubSubMediator.SubscribeAck =>
-    case WorkResult(workId, result) =>
-      log.info("Consumed result: {}", result)
-  }
+object WorkResultConsumer {
+  def apply(): Behavior[Any] =
+    Behaviors
+      .setup[Any] { ctx =>
+        val mediator = DistributedPubSub(ctx.system.toClassic).mediator
+        mediator ! DistributedPubSubMediator.Subscribe(
+          Master.ResultsTopic,
+          ctx.self.toClassic
+        )
+        Behaviors.receiveMessage[Any] {
+          case _: DistributedPubSubMediator.SubscribeAck =>
+            ctx.log.info("Subscribed to {} topic", Master.ResultsTopic)
+            Behaviors.same
+          case WorkResult(workId, result) =>
+            ctx.log.info("Consumed result: {}", result)
+            Behaviors.same
+        }
+      }
 
 }
 // #work-result-consumer
