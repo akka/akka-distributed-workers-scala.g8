@@ -1,13 +1,9 @@
 # Akka Distributed Workers Quickstart
 
-## Quickstart guide
-This example is described in the TODO-techhub-link
+## Project has moved
 
-The Distributed Workers example illustrates building a distributed system in Scala using Akka Cluster. 
-Within 30 minutes, you should be able to download and run the example and use this guide 
-to understand how the example is constructed. This will get your feet wet, and hopefully 
-inspire you to dive deeper into the wonderful sea of Akka!
-
+This example has moved to [akka-samples](https://github.com/akka/akka-samples/tree/2.6/akka-sample-distributed-workers-scala)
+and is not maintained here anymore.
 
 ## Template license
 
